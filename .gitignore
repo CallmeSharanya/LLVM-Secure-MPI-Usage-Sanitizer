@@ -1,0 +1,34 @@
+# Build artifacts
+
+build
+out
+
+
+# CMake / Ninja
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# LLVM / compilation outputs
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.bc
+*.ll
+*.s
+
+# Editors
+.vscode/
+.idea/
+
+# OS / misc
+.DS_Store
+*.swp
+*.swo
+core
+core.*
