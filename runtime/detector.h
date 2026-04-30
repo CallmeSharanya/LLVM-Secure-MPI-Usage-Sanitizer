@@ -28,6 +28,8 @@ typedef struct {
   uint64_t comm_f;   // MPI_Comm as Fortran handle
   uint64_t buf_addr; // raw pointer value
   uint64_t seq;
+  double timestamp;
+  uint32_t checksum;
   char type_name[MSAN_MAX_TYPENAME];
   char loc[MSAN_MAX_LOC];
   char coll_name[32]; // e.g. "Bcast", "Reduce"

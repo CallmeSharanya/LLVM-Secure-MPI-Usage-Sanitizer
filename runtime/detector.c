@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <math.h>
 
 static void report_mismatch(const MsanEvent *s, const MsanEvent *r,
                             const char *kind, const char *detail) {
@@ -148,9 +149,39 @@ static void check_collectives(MsanEvent *all, size_t total, int num_ranks) {
   free(offsets); free(counts); free(num_colls);
 }
 
+static void msan_generate_dot_graph(MsanEvent *all, size_t total) {
+  FILE *f = fopen("msan_comm_graph.dot", "w");
+  if (!f) return;
+  fprintf(f, "digraph MPIComm {\n");
+  fprintf(f, "  rankdir=LR;\n");
+  fprintf(f, "  node [shape=circle];\n");
+
+  uint8_t *matrix = calloc(1024 * 1024, 1); // Simple bitset for 1024 ranks
+  for (size_t i = 0; i < total; i++) {
+    if (all[i].kind == MSAN_EV_SEND) {
+      int src = all[i].rank;
+      int dest = all[i].peer;
+      if (src < 1024 && dest < 1024 && !matrix[src * 1024 + dest]) {
+        fprintf(f, "  %d -> %d [label=\"tag=%d\"];\n", src, dest, all[i].tag);
+        matrix[src * 1024 + dest] = 1;
+      }
+    }
+  }
+  fprintf(f, "}\n");
+  fclose(f);
+  free(matrix);
+  fprintf(stderr, "[msan][info] Communication graph generated: msan_comm_graph.dot\n");
+}
+
 void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
   uint8_t *used = (uint8_t *)calloc(total, 1);
   if (!used) return;
+
+  double total_lat = 0;
+  int lat_count = 0;
+  double sum_size = 0;
+  double sum_size_sq = 0;
+  int send_count = 0;
 
   // 1. Match Sends and Recvs
   for (size_t i = 0; i < total; ++i) {
@@ -166,6 +197,17 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
         used[j] = 1;
         matched = 1;
         
+        // Latency
+        if (r->timestamp > s->timestamp) {
+          total_lat += (r->timestamp - s->timestamp);
+          lat_count++;
+        }
+
+        // Integrity
+        if (s->checksum != r->checksum) {
+          report_mismatch(s, r, "integrity-violation", "Checksum mismatch: data corruption suspected");
+        }
+
         if (strcmp(s->type_name, r->type_name) != 0) {
           report_mismatch(s, r, "type-mismatch", "MPI_Datatype name differs");
         }
@@ -176,16 +218,46 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
       }
     }
     if (!matched) {
-       fprintf(stderr, "[msan][unmatched-recv] no matching send for recv at %s (rank %d, src %d, tag %d)\n",
+       fprintf(stderr, "[msan][unmatched-recv] no matching send for recv at %s (rank %d, src %d, tag %d). Potential Timeout/Deadlock.\n",
                r->loc, r->rank, r->peer, r->tag);
     }
+  }
+
+  // Stats for Anomaly Detection
+  for (size_t i = 0; i < total; i++) {
+    if (all[i].kind == MSAN_EV_SEND) {
+      double sz = (double)all[i].nbytes;
+      sum_size += sz;
+      sum_size_sq += sz * sz;
+      send_count++;
+    }
+  }
+
+  if (send_count > 1) {
+    double mean = sum_size / send_count;
+    double var = (sum_size_sq / send_count) - (mean * mean);
+    double stddev = sqrt(var > 0 ? var : 0);
+    
+    for (size_t i = 0; i < total; i++) {
+      if (all[i].kind == MSAN_EV_SEND && stddev > 0) {
+        double sz = (double)all[i].nbytes;
+        if (fabs(sz - mean) > 3 * stddev) {
+          fprintf(stderr, "[msan][anomaly-warning] unusual message size detected at %s: %" PRIu64 " bytes (mean=%.1f, stddev=%.1f)\n",
+                  all[i].loc, all[i].nbytes, mean, stddev);
+        }
+      }
+    }
+  }
+
+  if (lat_count > 0) {
+    fprintf(stderr, "[msan][info] Average P2P latency: %.6f seconds\n", total_lat / lat_count);
   }
 
   // 2. Report unmatched sends
   for (size_t i = 0; i < total; ++i) {
     MsanEvent *s = &all[i];
     if (s->kind == MSAN_EV_SEND && !used[i]) {
-      fprintf(stderr, "[msan][unmatched-send] no matching recv for send at %s (rank %d, dest %d, tag %d)\n",
+      fprintf(stderr, "[msan][unmatched-send] no matching recv for send at %s (rank %d, dest %d, tag %d). Potential Deadlock.\n",
               s->loc, s->rank, s->peer, s->tag);
     }
   }
@@ -196,7 +268,10 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
   // 4. Collective mismatch
   check_collectives(all, total, num_ranks);
 
-  // 5. Basic Deadlock Detection (Cycle in unmatched requests)
+  // 5. Graph generation
+  msan_generate_dot_graph(all, total);
+
+  // 6. Basic Deadlock Detection (Cycle in unmatched requests)
   int *adj = (int *)calloc((size_t)(num_ranks * num_ranks), sizeof(int));
   if (adj) {
     for (size_t i = 0; i < total; ++i) {

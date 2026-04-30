@@ -87,6 +87,17 @@ static int msan_type_size(MPI_Datatype datatype) {
   return sz;
 }
 
+static uint32_t msan_checksum(const void *buf, uint64_t nbytes) {
+  if (!buf || nbytes == 0) return 0;
+  uint32_t hash = 2166136261u;
+  const uint8_t *p = (const uint8_t *)buf;
+  for (uint64_t i = 0; i < nbytes; i++) {
+    hash ^= p[i];
+    hash *= 16777619u;
+  }
+  return hash;
+}
+
 static void log_event(MsanEventKind kind, void *buf, int count, uint64_t datatype_handle,
                       int peer, int tag, uint64_t comm_handle, const char *file, int line) {
   msan_init_if_needed();
@@ -105,6 +116,12 @@ static void log_event(MsanEventKind kind, void *buf, int count, uint64_t datatyp
   ev.comm_f = msan_comm_id(comm);
   ev.buf_addr = (uint64_t)(uintptr_t)buf;
   ev.seq = ++g_seq;
+  ev.timestamp = PMPI_Wtime();
+  
+  if (kind == MSAN_EV_SEND || kind == MSAN_EV_RECV) {
+    ev.checksum = msan_checksum(buf, ev.nbytes);
+  }
+
   msan_set_typename(datatype, ev.type_name);
   msan_set_loc(file, line, ev.loc);
 
