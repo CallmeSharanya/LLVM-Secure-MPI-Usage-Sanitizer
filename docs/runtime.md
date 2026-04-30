@@ -43,12 +43,45 @@ The MSan runtime tracks MPI events (Send/Recv) and validates them during `MPI_Fi
     *   `status`: Pointer to the `MPI_Status` object updated by the receive.
     *   `file`/`line`: Location of the `MPI_Recv` call.
 
+### `void __msan_before_collective(const char *name, void *sendbuf, void *recvbuf, int count, uint64_t datatype_handle, int root, uint64_t comm_handle, const char *file, int line)`
+
+*   **When to call**: Immediately before a collective call (e.g., `MPI_Bcast`, `MPI_Barrier`, `MPI_Reduce`).
+*   **Purpose**: Records a collective event. Validates that all ranks participate in the same collective sequence and use consistent arguments (e.g., matching root).
+*   **Parameters**:
+    *   `name`: The name of the collective operation (e.g., `"Bcast"`).
+    *   `sendbuf`/`recvbuf`: Pointers to the send and receive buffers.
+    *   `count`: Element count.
+    *   `datatype_handle`: The `MPI_Datatype` handle.
+    *   `root`: The root rank of the collective (or `-1` if not applicable).
+    *   `comm_handle`: The `MPI_Comm` handle.
+    *   `file`/`line`: Location of the collective call.
+
 ### `void __msan_finalize(const char *file, int line)`
 
 *   **When to call**: Immediately before `MPI_Finalize`.
-*   **Purpose**: Triggers global analysis. Rank 0 gathers events from all ranks and checks for unmatched sends/receives or mismatches in types/sizes.
-*   **Parameters**:
-    *   `file`/`line`: Location of the `MPI_Finalize` call.
+*   **Purpose**: Triggers global analysis. Rank 0 gathers events from all ranks and performs verification of P2P calls, collectives, and advanced analytics.
+
+## Advanced Analytics & Error Detection
+
+The sanitizer implements several advanced checks during the analysis phase:
+
+### 1. Message Integrity (Checksums)
+The runtime computes a fast **FNV-1a checksum** of the data buffer before a send and after a receive. The analyzer compares these checksums to detect silent data corruption during transit.
+
+### 2. Latency Profiling
+Every event is timestamped using `MPI_Wtime()`. The analyzer computes the duration between a matching `MPI_Send` and `MPI_Recv` to report the average point-to-point latency.
+
+### 3. Communication Graph
+The analyzer generates a **Graphviz DOT file** (`msan_comm_graph.dot`) representing the communication topology of the application, labeling edges with message tags.
+
+### 4. Anomaly Detection
+The analyzer calculates the statistical mean and standard deviation of message sizes. Any message size that deviates by more than **3 standard deviations (3σ)** is flagged as an anomaly.
+
+### 5. Collective Mismatch Detection
+Ensures that all ranks in a communicator call the same collectives in the same order. It also verifies that parameters like the `root` rank are consistent across all participants.
+
+### 6. Deadlock Detection
+Builds a "Wait-For" graph based on unmatched sends and receives. If a cycle is found in the graph, a potential deadlock is reported involving the specific ranks.
 
 ## Implementation Requirements
 
