@@ -53,7 +53,8 @@ target_link_options(MPISanitizePass PRIVATE ${LLVM_DYLIB_LDFLAGS})
 target_link_libraries(MPISanitizePass PRIVATE ${LLVM_DYLIB_LIBS} ${LLVM_DYLIB_SYSTEM_LIBS})
 
 add_library(msan_runtime SHARED
-  runtime/msan_runtime.c
+  runtime/runtime.c
+  runtime/detector.c
 )
 
 target_include_directories(msan_runtime PUBLIC

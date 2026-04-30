@@ -66,6 +66,10 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
     FunctionCallee Init =
       M.getOrInsertFunction("__msan_init", VoidTy, I8PtrTy, I32Ty);
 
+    // void __msan_before_collective(const char *name, void *sendbuf, void *recvbuf, int count, uint64_t dt_handle, int root, uint64_t comm_handle, const char *file, int line);
+    FunctionCallee BeforeCollective =
+      M.getOrInsertFunction("__msan_before_collective", VoidTy, I8PtrTy, I8PtrTy, I8PtrTy, I32Ty, I64Ty, I32Ty, I64Ty, I8PtrTy, I32Ty);
+
     bool Changed = false;
 
     auto toI64Handle = [&](IRBuilder<> &B, Value *V) -> Value * {
@@ -181,6 +185,66 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
           IRBuilder<> B(CB);
           auto [FilePtr, LineVal] = getFileLine(B, I);
           B.CreateCall(Finalize, {FilePtr, LineVal});
+          Changed = true;
+          continue;
+        }
+
+        // Handle Collectives.
+        if (Name == "MPI_Barrier") {
+          // MPI_Barrier(comm)
+          IRBuilder<> B(CB);
+          auto [FilePtr, LineVal] = getFileLine(B, I);
+          Value *Comm = toI64Handle(B, CB->getArgOperand(0));
+          B.CreateCall(BeforeCollective, {B.CreateGlobalStringPtr("Barrier"), 
+            ConstantPointerNull::get(I8PtrTy), ConstantPointerNull::get(I8PtrTy),
+            ConstantInt::get(I32Ty, 0), ConstantInt::get(I64Ty, 0),
+            ConstantInt::get(I32Ty, -1), Comm, FilePtr, LineVal});
+          Changed = true;
+          continue;
+        }
+
+        if (Name == "MPI_Bcast") {
+          // MPI_Bcast(buffer, count, datatype, root, comm)
+          IRBuilder<> B(CB);
+          auto [FilePtr, LineVal] = getFileLine(B, I);
+          Value *Buf = toI8Ptr(B, CB->getArgOperand(0));
+          Value *Count = B.CreateIntCast(CB->getArgOperand(1), I32Ty, true);
+          Value *Datatype = toI64Handle(B, CB->getArgOperand(2));
+          Value *Root = B.CreateIntCast(CB->getArgOperand(3), I32Ty, true);
+          Value *Comm = toI64Handle(B, CB->getArgOperand(4));
+          B.CreateCall(BeforeCollective, {B.CreateGlobalStringPtr("Bcast"),
+            Buf, ConstantPointerNull::get(I8PtrTy), Count, Datatype, Root, Comm, FilePtr, LineVal});
+          Changed = true;
+          continue;
+        }
+
+        if (Name == "MPI_Reduce") {
+          // MPI_Reduce(sendbuf, recvbuf, count, datatype, op, root, comm)
+          IRBuilder<> B(CB);
+          auto [FilePtr, LineVal] = getFileLine(B, I);
+          Value *SBuf = toI8Ptr(B, CB->getArgOperand(0));
+          Value *RBuf = toI8Ptr(B, CB->getArgOperand(1));
+          Value *Count = B.CreateIntCast(CB->getArgOperand(2), I32Ty, true);
+          Value *Datatype = toI64Handle(B, CB->getArgOperand(3));
+          Value *Root = B.CreateIntCast(CB->getArgOperand(5), I32Ty, true);
+          Value *Comm = toI64Handle(B, CB->getArgOperand(6));
+          B.CreateCall(BeforeCollective, {B.CreateGlobalStringPtr("Reduce"),
+            SBuf, RBuf, Count, Datatype, Root, Comm, FilePtr, LineVal});
+          Changed = true;
+          continue;
+        }
+
+        if (Name == "MPI_Allreduce") {
+          // MPI_Allreduce(sendbuf, recvbuf, count, datatype, op, comm)
+          IRBuilder<> B(CB);
+          auto [FilePtr, LineVal] = getFileLine(B, I);
+          Value *SBuf = toI8Ptr(B, CB->getArgOperand(0));
+          Value *RBuf = toI8Ptr(B, CB->getArgOperand(1));
+          Value *Count = B.CreateIntCast(CB->getArgOperand(2), I32Ty, true);
+          Value *Datatype = toI64Handle(B, CB->getArgOperand(3));
+          Value *Comm = toI64Handle(B, CB->getArgOperand(5));
+          B.CreateCall(BeforeCollective, {B.CreateGlobalStringPtr("Allreduce"),
+            SBuf, RBuf, Count, Datatype, ConstantInt::get(I32Ty, -1), Comm, FilePtr, LineVal});
           Changed = true;
           continue;
         }
