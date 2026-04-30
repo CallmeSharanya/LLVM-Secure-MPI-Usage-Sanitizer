@@ -60,15 +60,92 @@ static void check_overlap(MsanEvent *events, size_t total) {
 }
 
 static void check_collectives(MsanEvent *all, size_t total, int num_ranks) {
-  // Collective mismatch: ensure all ranks call same collective in same order.
-  // We can group by (comm, seq_in_comm).
-  // For simplicity, let's just track the global sequence of collectives.
-  
-  uint32_t max_coll_seq = 0;
-  for(size_t i=0; i<total; ++i) if(all[i].kind == MSAN_EV_COLLECTIVE) max_coll_seq++;
+  size_t *offsets = (size_t *)calloc((size_t)num_ranks, sizeof(size_t));
+  size_t *counts = (size_t *)calloc((size_t)num_ranks, sizeof(size_t));
+  if (!offsets || !counts) {
+    if (offsets) free(offsets);
+    if (counts) free(counts);
+    return;
+  }
 
-  // This is a bit complex for a stateless gather. 
-  // Let's just do a basic check: for each collective call by rank 0, check others.
+  // Identify range of events for each rank in the 'all' array
+  int current_rank = -1;
+  for (size_t i = 0; i < total; ++i) {
+    if (all[i].rank != current_rank) {
+      current_rank = all[i].rank;
+      if (current_rank >= 0 && current_rank < num_ranks) {
+        offsets[current_rank] = i;
+      }
+    }
+    if (current_rank >= 0 && current_rank < num_ranks) {
+      counts[current_rank]++;
+    }
+  }
+
+  // Find max collectives per rank
+  size_t max_colls = 0;
+  size_t *num_colls = (size_t *)calloc((size_t)num_ranks, sizeof(size_t));
+  if (!num_colls) {
+    free(offsets); free(counts);
+    return;
+  }
+
+  for (int r = 0; r < num_ranks; r++) {
+    for (size_t i = 0; i < counts[r]; i++) {
+      if (all[offsets[r] + i].kind == MSAN_EV_COLLECTIVE) {
+        num_colls[r]++;
+      }
+    }
+    if (num_colls[r] > max_colls) max_colls = num_colls[r];
+  }
+
+  if (max_colls == 0) {
+    free(offsets); free(counts); free(num_colls);
+    return;
+  }
+
+  // Compare collective calls rank-by-rank for each sequence index
+  for (size_t i = 0; i < max_colls; i++) {
+    MsanEvent *ref = NULL;
+    int ref_rank = -1;
+
+    for (int r = 0; r < num_ranks; r++) {
+      // Find i-th collective for rank r
+      MsanEvent *curr = NULL;
+      size_t c_idx = 0;
+      for (size_t j = 0; j < counts[r]; j++) {
+        if (all[offsets[r] + j].kind == MSAN_EV_COLLECTIVE) {
+          if (c_idx == i) {
+            curr = &all[offsets[r] + j];
+            break;
+          }
+          c_idx++;
+        }
+      }
+
+      if (!ref && curr) {
+        ref = curr;
+        ref_rank = r;
+        continue;
+      }
+
+      if (ref && !curr) {
+        fprintf(stderr, "[msan][collective-mismatch] rank %d missing collective call #%zu\n"
+                        "  reference: %s at %s (rank %d)\n",
+                r, (size_t)(i + 1), ref->coll_name, ref->loc, ref_rank);
+      } else if (ref && curr) {
+        if (strcmp(ref->coll_name, curr->coll_name) != 0 || ref->comm_f != curr->comm_f || ref->peer != curr->peer) {
+          fprintf(stderr, "[msan][collective-mismatch] collective call #%zu mismatch\n"
+                          "  rank %d: %s, comm=%" PRIu64 ", root=%d at %s\n"
+                          "  rank %d: %s, comm=%" PRIu64 ", root=%d at %s\n",
+                  (size_t)(i + 1), ref_rank, ref->coll_name, ref->comm_f, ref->peer, ref->loc,
+                  r, curr->coll_name, curr->comm_f, curr->peer, curr->loc);
+        }
+      }
+    }
+  }
+
+  free(offsets); free(counts); free(num_colls);
 }
 
 void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
@@ -116,7 +193,10 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
   // 3. Buffer overlap
   check_overlap(all, total);
 
-  // 4. Basic Deadlock Detection (Cycle in unmatched requests)
+  // 4. Collective mismatch
+  check_collectives(all, total, num_ranks);
+
+  // 5. Basic Deadlock Detection (Cycle in unmatched requests)
   int *adj = (int *)calloc((size_t)(num_ranks * num_ranks), sizeof(int));
   if (adj) {
     for (size_t i = 0; i < total; ++i) {
