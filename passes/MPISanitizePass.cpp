@@ -43,7 +43,7 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
     LLVMContext &Ctx = M.getContext();
 
     Type *VoidTy = Type::getVoidTy(Ctx);
-    Type *I8PtrTy = Type::getInt8PtrTy(Ctx);
+    PointerType *I8PtrTy = Type::getInt8PtrTy(Ctx);
     Type *I32Ty = Type::getInt32Ty(Ctx);
     Type *I64Ty = Type::getInt64Ty(Ctx);
 
