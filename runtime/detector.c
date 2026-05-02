@@ -5,6 +5,8 @@
 #include <inttypes.h>
 #include <math.h>
 
+#define MSAN_TIMEOUT_THRESHOLD 5.0
+
 static void report_mismatch(const MsanEvent *s, const MsanEvent *r,
                             const char *kind, const char *detail) {
   fprintf(stderr,
@@ -29,7 +31,7 @@ static int ev_key_equal(const MsanEvent *s, const MsanEvent *r) {
   return 1;
 }
 
-static void check_overlap(MsanEvent *events, size_t total) {
+static void check_overlap(MsanEvent *events, size_t total, int *overlap_count) {
   // Simple O(N^2) overlap check for active buffers on the same rank.
   // In a real sanitizer, we'd track active requests.
   for (size_t i = 0; i < total; ++i) {
@@ -54,13 +56,14 @@ static void check_overlap(MsanEvent *events, size_t total) {
                            "  op2: %s at %s (addr=0x%" PRIx64 ", size=%" PRIu64 ")\n",
                    a->rank, a->kind == MSAN_EV_SEND ? "Send" : "Recv", a->loc, a_start, a->nbytes,
                    b->kind == MSAN_EV_SEND ? "Send" : "Recv", b->loc, b_start, b->nbytes);
+           (*overlap_count)++;
         }
       }
     }
   }
 }
 
-static void check_collectives(MsanEvent *all, size_t total, int num_ranks) {
+static void check_collectives(MsanEvent *all, size_t total, int num_ranks, int *coll_mismatch_count) {
   size_t *offsets = (size_t *)calloc((size_t)num_ranks, sizeof(size_t));
   size_t *counts = (size_t *)calloc((size_t)num_ranks, sizeof(size_t));
   if (!offsets || !counts) {
@@ -134,6 +137,7 @@ static void check_collectives(MsanEvent *all, size_t total, int num_ranks) {
         fprintf(stderr, "[msan][collective-mismatch] rank %d missing collective call #%zu\n"
                         "  reference: %s at %s (rank %d)\n",
                 r, (size_t)(i + 1), ref->coll_name, ref->loc, ref_rank);
+        (*coll_mismatch_count)++;
       } else if (ref && curr) {
         if (strcmp(ref->coll_name, curr->coll_name) != 0 || ref->comm_f != curr->comm_f || ref->peer != curr->peer) {
           fprintf(stderr, "[msan][collective-mismatch] collective call #%zu mismatch\n"
@@ -141,6 +145,7 @@ static void check_collectives(MsanEvent *all, size_t total, int num_ranks) {
                           "  rank %d: %s, comm=%" PRIu64 ", root=%d at %s\n",
                   (size_t)(i + 1), ref_rank, ref->coll_name, ref->comm_f, ref->peer, ref->loc,
                   r, curr->coll_name, curr->comm_f, curr->peer, curr->loc);
+          (*coll_mismatch_count)++;
         }
       }
     }
@@ -183,6 +188,28 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
   double sum_size_sq = 0;
   int send_count = 0;
 
+  /* Error counters for summary report */
+  int type_mismatch_count = 0;
+  int size_mismatch_count = 0;
+  int integrity_count = 0;
+  int coll_mismatch_count = 0;
+  int deadlock_count = 0;
+  int replay_count = 0;
+  int timeout_count = 0;
+  int anomaly_count = 0;
+  int overlap_count = 0;
+  int matched_pairs = 0;
+  int unmatched_send_count = 0;
+  int unmatched_recv_count = 0;
+  int recv_count = 0;
+  int coll_count = 0;
+
+  /* Count event types */
+  for (size_t i = 0; i < total; i++) {
+    if (all[i].kind == MSAN_EV_RECV) recv_count++;
+    else if (all[i].kind == MSAN_EV_COLLECTIVE) coll_count++;
+  }
+
   // 1. Match Sends and Recvs
   for (size_t i = 0; i < total; ++i) {
     MsanEvent *r = &all[i];
@@ -196,6 +223,7 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
         used[i] = 1;
         used[j] = 1;
         matched = 1;
+        matched_pairs++;
         
         // Latency
         if (r->timestamp > s->timestamp) {
@@ -206,13 +234,16 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
         // Integrity
         if (s->checksum != r->checksum) {
           report_mismatch(s, r, "integrity-violation", "Checksum mismatch: data corruption suspected");
+          integrity_count++;
         }
 
         if (strcmp(s->type_name, r->type_name) != 0) {
           report_mismatch(s, r, "type-mismatch", "MPI_Datatype name differs");
+          type_mismatch_count++;
         }
         if (s->nbytes != r->nbytes) {
           report_mismatch(s, r, "size-mismatch", "send bytes != recv buffer capacity");
+          size_mismatch_count++;
         }
         break;
       }
@@ -220,6 +251,7 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
     if (!matched) {
        fprintf(stderr, "[msan][unmatched-recv] no matching send for recv at %s (rank %d, src %d, tag %d). Potential Timeout/Deadlock.\n",
                r->loc, r->rank, r->peer, r->tag);
+       unmatched_recv_count++;
     }
   }
 
@@ -244,6 +276,7 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
         if (fabs(sz - mean) > 3 * stddev) {
           fprintf(stderr, "[msan][anomaly-warning] unusual message size detected at %s: %" PRIu64 " bytes (mean=%.1f, stddev=%.1f)\n",
                   all[i].loc, all[i].nbytes, mean, stddev);
+          anomaly_count++;
         }
       }
     }
@@ -259,14 +292,74 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
     if (s->kind == MSAN_EV_SEND && !used[i]) {
       fprintf(stderr, "[msan][unmatched-send] no matching recv for send at %s (rank %d, dest %d, tag %d). Potential Deadlock.\n",
               s->loc, s->rank, s->peer, s->tag);
+      unmatched_send_count++;
+    }
+  }
+
+  // 2b. Replay / Duplicate Message Detection
+  // Look at all MATCHED send events for identical (rank, peer, tag, comm_f, checksum)
+  {
+    uint8_t *reported = (uint8_t *)calloc(total, 1);
+    if (reported) {
+      for (size_t i = 0; i < total; ++i) {
+        if (all[i].kind != MSAN_EV_SEND || !used[i] || reported[i]) continue;
+        if (all[i].checksum == 0) continue;
+
+        for (size_t j = i + 1; j < total; ++j) {
+          if (all[j].kind != MSAN_EV_SEND || !used[j] || reported[j]) continue;
+          if (all[j].checksum == 0) continue;
+
+          if (all[i].rank == all[j].rank &&
+              all[i].peer == all[j].peer &&
+              all[i].tag == all[j].tag &&
+              all[i].comm_f == all[j].comm_f &&
+              all[i].checksum == all[j].checksum) {
+            fprintf(stderr, "[msan][replay-detected] duplicate message detected:\n"
+                            "  send #1: rank=%d -> dest=%d tag=%d comm=%" PRIu64 " checksum=0x%08X at %s\n"
+                            "  send #2: rank=%d -> dest=%d tag=%d comm=%" PRIu64 " checksum=0x%08X at %s\n"
+                            "  Possible replay attack or unintended message duplication.\n",
+                    all[i].rank, all[i].peer, all[i].tag, all[i].comm_f, all[i].checksum, all[i].loc,
+                    all[j].rank, all[j].peer, all[j].tag, all[j].comm_f, all[j].checksum, all[j].loc);
+            reported[i] = 1;
+            reported[j] = 1;
+            replay_count++;
+          }
+        }
+      }
+      free(reported);
+    }
+  }
+
+  // 2c. Timeout-Based Stall Detection
+  // For every unmatched recv, check if the wait time exceeds MSAN_TIMEOUT_THRESHOLD
+  for (size_t i = 0; i < total; ++i) {
+    if (all[i].kind != MSAN_EV_RECV || used[i]) continue;
+
+    // Find the earliest send timestamp among all sends where send.rank == recv.peer
+    // (i.e., sends originating from the rank the recv is expecting a message from)
+    double earliest_send_ts = -1.0;
+    int found_send = 0;
+    for (size_t j = 0; j < total; ++j) {
+      if (all[j].kind == MSAN_EV_SEND && all[j].rank == all[i].peer) {
+        if (!found_send || all[j].timestamp < earliest_send_ts) {
+          earliest_send_ts = all[j].timestamp;
+          found_send = 1;
+        }
+      }
+    }
+
+    if (found_send && (all[i].timestamp - earliest_send_ts) > MSAN_TIMEOUT_THRESHOLD) {
+      fprintf(stderr, "[msan][timeout-warning] rank=%d waited >%.1fs for message from rank=%d tag=%d — possible stall or node failure at %s\n",
+              all[i].rank, MSAN_TIMEOUT_THRESHOLD, all[i].peer, all[i].tag, all[i].loc);
+      timeout_count++;
     }
   }
 
   // 3. Buffer overlap
-  check_overlap(all, total);
+  check_overlap(all, total, &overlap_count);
 
   // 4. Collective mismatch
-  check_collectives(all, total, num_ranks);
+  check_collectives(all, total, num_ranks, &coll_mismatch_count);
 
   // 5. Graph generation
   msan_generate_dot_graph(all, total);
@@ -294,9 +387,45 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
     for (int i = 0; i < num_ranks; i++) {
       if (adj[i * num_ranks + i]) {
         fprintf(stderr, "[msan][deadlock-detected] potential deadlock involving rank %d\n", i);
+        deadlock_count++;
       }
     }
     free(adj);
+  }
+
+  // 7. Summary Report
+  {
+    int total_errors = type_mismatch_count + size_mismatch_count +
+                       integrity_count + coll_mismatch_count +
+                       deadlock_count + replay_count + timeout_count +
+                       anomaly_count + overlap_count;
+
+    fprintf(stderr, "[msan][summary] ============================================\n");
+    fprintf(stderr, "[msan][summary] MPI Sanitizer — Analysis Complete\n");
+    fprintf(stderr, "[msan][summary] Total events analyzed : %zu\n", total);
+    fprintf(stderr, "[msan][summary] Sends                 : %d\n", send_count);
+    fprintf(stderr, "[msan][summary] Recvs                 : %d\n", recv_count);
+    fprintf(stderr, "[msan][summary] Collectives           : %d\n", coll_count);
+    fprintf(stderr, "[msan][summary] Matched pairs         : %d\n", matched_pairs);
+    fprintf(stderr, "[msan][summary] Unmatched sends       : %d\n", unmatched_send_count);
+    fprintf(stderr, "[msan][summary] Unmatched recvs       : %d\n", unmatched_recv_count);
+    fprintf(stderr, "[msan][summary] Errors detected       : %d\n", total_errors);
+    fprintf(stderr, "[msan][summary]   type-mismatch       : %d\n", type_mismatch_count);
+    fprintf(stderr, "[msan][summary]   size-mismatch       : %d\n", size_mismatch_count);
+    fprintf(stderr, "[msan][summary]   integrity-violation : %d\n", integrity_count);
+    fprintf(stderr, "[msan][summary]   collective-mismatch : %d\n", coll_mismatch_count);
+    fprintf(stderr, "[msan][summary]   deadlock-detected   : %d\n", deadlock_count);
+    fprintf(stderr, "[msan][summary]   replay-detected     : %d\n", replay_count);
+    fprintf(stderr, "[msan][summary]   timeout-warning     : %d\n", timeout_count);
+    fprintf(stderr, "[msan][summary]   anomaly-warning     : %d\n", anomaly_count);
+    fprintf(stderr, "[msan][summary]   overlap-warning     : %d\n", overlap_count);
+    if (lat_count > 0) {
+      fprintf(stderr, "[msan][summary] Avg P2P latency       : %.6fs\n", total_lat / lat_count);
+    } else {
+      fprintf(stderr, "[msan][summary] Avg P2P latency       : N/A\n");
+    }
+    fprintf(stderr, "[msan][summary] Comm graph written to : msan_comm_graph.dot\n");
+    fprintf(stderr, "[msan][summary] ============================================\n");
   }
 
   free(used);
