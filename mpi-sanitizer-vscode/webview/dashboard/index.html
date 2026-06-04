@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="{{CSP}}" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MPI Sanitizer Dashboard</title>
+  <style>
+    :root {
+      --bg: #f6f3ea;
+      --panel: #ffffff;
+      --ink: #1d1b16;
+      --accent: #c14953;
+      --muted: #6a635a;
+      --border: #e2dccf;
+    }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top right, #fef7e6 0%, #f6f3ea 45%, #f1ece1 100%);
+      color: var(--ink);
+      font-family: "IBM Plex Serif", "Georgia", serif;
+    }
+    header {
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.9);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0.6px;
+    }
+    #root {
+      padding: 18px 24px 28px;
+    }
+    .tabs {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .tab {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 8px 12px;
+      border-radius: 18px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .tab.active {
+      color: var(--ink);
+      border-color: var(--accent);
+      box-shadow: 0 3px 14px rgba(193, 73, 83, 0.12);
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 20px rgba(29, 27, 22, 0.08);
+    }
+    .card h3 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+    }
+    .diag {
+      border-left: 4px solid var(--accent);
+      padding-left: 10px;
+      margin-bottom: 10px;
+    }
+    .diag button {
+      margin-top: 6px;
+      border: none;
+      background: var(--accent);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MPI Sanitizer Dashboard</h1>
+    <div class="muted">Live report view</div>
+  </header>
+  <div id="root"></div>
+
+  <script nonce="{{NONCE}}" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script nonce="{{NONCE}}" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script nonce="{{NONCE}}">
+    const vscode = acquireVsCodeApi();
+
+    const Tabs = {
+      DIAGNOSTICS: "Diagnostics",
+      TOPOLOGY: "Topology",
+      LATENCY: "Latency",
+      TIMELINE: "Timeline",
+    };
+
+    function App() {
+      const [activeTab, setActiveTab] = React.useState(Tabs.DIAGNOSTICS);
+      const [report, setReport] = React.useState({ errors: [] });
+
+      React.useEffect(() => {
+        window.addEventListener("message", (event) => {
+          if (event.data?.type === "report") {
+            setReport(event.data.report || { errors: [] });
+          }
+        });
+      }, []);
+
+      const errors = report.errors || [];
+
+      const diagnosticsView = React.createElement("div", { className: "card" },
+        React.createElement("h3", null, "Diagnostics"),
+        errors.length === 0
+          ? React.createElement("div", { className: "muted" }, "No diagnostics yet. Run MPI Sanitize.")
+          : errors.map((e, idx) => React.createElement("div", { key: idx, className: "diag" },
+              React.createElement("div", null, `[rank ${e.rank ?? "?"}] ${e.message}`),
+              React.createElement("div", { className: "muted" }, `${e.file}:${e.line}`),
+              e.file && e.line ? React.createElement("button", {
+                onClick: () => vscode.postMessage({ type: "navigateTo", file: e.file, line: e.line })
+              }, "Go to source") : null
+            ))
+      );
+
+      const placeholder = (title, text) => React.createElement("div", { className: "card" },
+        React.createElement("h3", null, title),
+        React.createElement("div", { className: "muted" }, text)
+      );
+
+      const body = activeTab === Tabs.DIAGNOSTICS
+        ? diagnosticsView
+        : React.createElement("div", { className: "grid" },
+            placeholder("Topology", "Communication graph renders here."),
+            placeholder("Latency", "Latency bars and stats render here."),
+            placeholder("Timeline", "Per-rank swimlanes render here.")
+          );
+
+      return React.createElement("div", null,
+        React.createElement("div", { className: "tabs" },
+          Object.values(Tabs).map((tab) =>
+            React.createElement("div", {
+              key: tab,
+              className: `tab ${activeTab === tab ? "active" : ""}`,
+              onClick: () => setActiveTab(tab),
+            }, tab)
+          )
+        ),
+        body
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+  </script>
+</body>
+</html>

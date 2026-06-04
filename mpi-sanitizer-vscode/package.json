@@ -1,0 +1,86 @@
+{
+  "name": "mpi-sanitizer-vscode",
+  "displayName": "MPI Sanitizer",
+  "description": "VS Code extension for LLVM-based MPI sanitizer diagnostics and dashboard.",
+  "version": "0.0.1",
+  "publisher": "college",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:mpiSanitize.buildAnalyze",
+    "onCommand:mpiSanitize.openDashboard",
+    "onLanguage:c",
+    "onLanguage:cpp"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "mpiSanitize.buildAnalyze",
+        "title": "MPI Sanitize: Build & Analyze"
+      },
+      {
+        "command": "mpiSanitize.openDashboard",
+        "title": "MPI Sanitize: Open Dashboard"
+      },
+      {
+        "command": "mpiSanitize.navigateTo",
+        "title": "MPI Sanitize: Navigate To"
+      }
+    ],
+    "configuration": {
+      "title": "MPI Sanitizer",
+      "properties": {
+        "mpiSanitize.compilerPath": {
+          "type": "string",
+          "default": "clang",
+          "description": "Path to clang compiler."
+        },
+        "mpiSanitize.passPluginPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/build/libMPISanitizePass.so",
+          "description": "Path to MPISanitize LLVM pass plugin."
+        },
+        "mpiSanitize.runtimeLibPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/build/libmsan_runtime.so",
+          "description": "Path to MPI sanitizer runtime shared library."
+        },
+        "mpiSanitize.mpiRun": {
+          "type": "string",
+          "default": "mpirun",
+          "description": "MPI launcher command."
+        },
+        "mpiSanitize.mpiArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["-n", "4"],
+          "description": "Arguments passed to mpirun before the program."
+        },
+        "mpiSanitize.reportPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/mpi_report.json",
+          "description": "Path to the sanitizer report JSON file."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./tsconfig.json",
+    "watch": "tsc -w -p ./tsconfig.json",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "typescript": "^5.3.3",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1"
+  }
+}
