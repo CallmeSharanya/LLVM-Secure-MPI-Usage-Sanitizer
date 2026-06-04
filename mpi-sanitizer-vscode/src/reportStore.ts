@@ -81,22 +81,26 @@ export class ReportStore {
 
   private async loadReport(): Promise<void> {
     const raw = await fs.promises.readFile(this.reportPath, "utf8");
-    const json = JSON.parse(raw);
-    const errors = Array.isArray(json?.errors) ? json.errors : [];
+    const json: { errors?: unknown } = JSON.parse(raw);
+    const errors = Array.isArray(json.errors) ? json.errors : [];
+
     const sanitized: MpiReportEntry[] = errors
       .filter((e: unknown) => typeof e === "object" && e !== null)
-      .map((e: any) => ({
-        file: String(e.file || ""),
-        line: Number(e.line || 0),
-        col: e.col !== undefined ? Number(e.col) : 0,
-        severity: (e.severity || "error") as MpiSeverity,
-        message: String(e.message || ""),
-        rank: e.rank !== undefined ? Number(e.rank) : undefined,
-        peer: e.peer !== undefined ? Number(e.peer) : undefined,
-        type: e.type !== undefined ? String(e.type) : undefined,
-        peer_file: e.peer_file !== undefined ? String(e.peer_file) : undefined,
-        peer_line: e.peer_line !== undefined ? Number(e.peer_line) : undefined,
-      }))
+      .map((entry) => {
+        const e = entry as Record<string, unknown>;
+        return {
+          file: String(e.file || ""),
+          line: Number(e.line || 0),
+          col: e.col !== undefined ? Number(e.col) : 0,
+          severity: (e.severity || "error") as MpiSeverity,
+          message: String(e.message || ""),
+          rank: e.rank !== undefined ? Number(e.rank) : undefined,
+          peer: e.peer !== undefined ? Number(e.peer) : undefined,
+          type: e.type !== undefined ? String(e.type) : undefined,
+          peer_file: e.peer_file !== undefined ? String(e.peer_file) : undefined,
+          peer_line: e.peer_line !== undefined ? Number(e.peer_line) : undefined,
+        };
+      })
       .filter((e) => e.file && e.line > 0 && e.message);
 
     this.report = { errors: sanitized };

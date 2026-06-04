@@ -29,7 +29,7 @@ export class DashboardPanel {
       this.panel = undefined;
     });
 
-    this.panel.webview.onDidReceiveMessage((msg) => {
+    this.panel.webview.onDidReceiveMessage((msg: { type?: string; file?: string; line?: number }) => {
       if (msg?.type === "navigateTo" && msg.file && msg.line) {
         onNavigate(String(msg.file), Number(msg.line));
       }

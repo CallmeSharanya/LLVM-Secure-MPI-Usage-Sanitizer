@@ -13,6 +13,7 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "onCommand:mpiSanitize.buildAnalyze",
+    "onCommand:mpiSanitize.buildAnalyse",
     "onCommand:mpiSanitize.openDashboard",
     "onLanguage:c",
     "onLanguage:cpp"
@@ -22,6 +23,10 @@
       {
         "command": "mpiSanitize.buildAnalyze",
         "title": "MPI Sanitize: Build & Analyze"
+      },
+      {
+        "command": "mpiSanitize.buildAnalyse",
+        "title": "MPI Sanitize: Build & Analyse"
       },
       {
         "command": "mpiSanitize.openDashboard",
@@ -76,6 +81,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
+    "@types/vscode": "^1.85.0",
     "typescript": "^5.3.3",
     "vsce": "^2.15.0"
   },

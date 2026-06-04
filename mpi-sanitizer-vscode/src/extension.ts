@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from "vscode-languageclient/node";
+import { LanguageClient, TransportKind } from "vscode-languageclient/node";
 import { ReportStore } from "./reportStore";
 import { MpiCodeLensProvider } from "./codelens";
 import { DashboardPanel } from "./dashboardPanel";
 
-let client: LanguageClient | undefined;
+let client: any;
 let currentFilePath: string | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
@@ -42,7 +42,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
         return [createTaskForFile(currentFilePath, workspaceRoot)];
       },
-      resolveTask: (_task) => undefined,
+      resolveTask: (_task: vscode.Task) => undefined,
     })
   );
 
@@ -63,19 +63,19 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mpiSanitize.buildAnalyze", async () => {
-      const tasks = await vscode.tasks.fetchTasks({ type: "mpi-sanitize" });
-      const task = tasks[0];
-      if (!task) {
-        vscode.window.showWarningMessage("Open a C/C++ file to run MPI Sanitize.");
-        return;
-      }
-      vscode.tasks.executeTask(task);
+      await runBuildAnalyze();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("mpiSanitize.buildAnalyse", async () => {
+      await runBuildAnalyze();
     })
   );
 
   startLanguageServer(context, reportPath);
 
-  store.onDidUpdate((report) => {
+  store.onDidUpdate((report: import("./reportStore").MpiReport) => {
     dashboard.show(report, (file, line) => navigateTo(file, line));
   });
 }
@@ -111,14 +111,24 @@ function createTaskForFile(inputFile: string, root: string): vscode.Task {
   );
 }
 
+async function runBuildAnalyze(): Promise<void> {
+  const tasks = await vscode.tasks.fetchTasks({ type: "mpi-sanitize" });
+  const task = tasks[0];
+  if (!task) {
+    vscode.window.showWarningMessage("Open a C/C++ file to run MPI Sanitize.");
+    return;
+  }
+  await vscode.tasks.executeTask(task);
+}
+
 function startLanguageServer(context: vscode.ExtensionContext, reportPath: string): void {
   const serverModule = context.asAbsolutePath(path.join("out", "server.js"));
-  const serverOptions: ServerOptions = {
+  const serverOptions = {
     run: { module: serverModule, transport: TransportKind.ipc },
     debug: { module: serverModule, transport: TransportKind.ipc },
   };
 
-  const clientOptions: LanguageClientOptions = {
+  const clientOptions = {
     documentSelector: [{ language: "c" }, { language: "cpp" }],
     initializationOptions: {
       reportPath,
@@ -131,8 +141,8 @@ function startLanguageServer(context: vscode.ExtensionContext, reportPath: strin
 
 function navigateTo(file: string, line: number): void {
   const uri = vscode.Uri.file(file);
-  vscode.workspace.openTextDocument(uri).then((doc) => {
-    vscode.window.showTextDocument(doc, { preview: false }).then((editor) => {
+  vscode.workspace.openTextDocument(uri).then((doc: vscode.TextDocument) => {
+    vscode.window.showTextDocument(doc, { preview: false }).then((editor: vscode.TextEditor) => {
       const pos = new vscode.Position(Math.max(0, line - 1), 0);
       editor.selection = new vscode.Selection(pos, pos);
       editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
