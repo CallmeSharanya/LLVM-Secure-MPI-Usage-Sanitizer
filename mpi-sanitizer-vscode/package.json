@@ -46,6 +46,26 @@
           "default": "clang",
           "description": "Path to clang compiler."
         },
+        "mpiSanitize.cxxCompilerPath": {
+          "type": "string",
+          "default": "clang++",
+          "description": "Path to clang++ compiler."
+        },
+        "mpiSanitize.optPath": {
+          "type": "string",
+          "default": "opt",
+          "description": "Path to LLVM opt."
+        },
+        "mpiSanitize.mpiCompilerPath": {
+          "type": "string",
+          "default": "mpicc",
+          "description": "Path to MPI C compiler wrapper."
+        },
+        "mpiSanitize.mpiCxxCompilerPath": {
+          "type": "string",
+          "default": "mpicxx",
+          "description": "Path to MPI C++ compiler wrapper."
+        },
         "mpiSanitize.passPluginPath": {
           "type": "string",
           "default": "${workspaceFolder}/build/libMPISanitizePass.so",

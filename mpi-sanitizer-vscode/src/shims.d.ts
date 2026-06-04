@@ -37,12 +37,19 @@ declare module "vscode" {
 
   export interface TextDocument {
     uri: Uri;
+    languageId: string;
     getText(): string;
   }
 
   export interface TextEditor {
+    document: TextDocument;
     selection: Selection;
     revealRange(range: Range, revealType: TextEditorRevealType): void;
+  }
+
+  export interface QuickPickItem {
+    label: string;
+    description?: string;
   }
 
   export interface Webview {
@@ -83,6 +90,7 @@ declare module "vscode" {
   }
 
   export enum TaskScope {
+    Global = 0,
     Workspace = 1,
   }
 
@@ -121,8 +129,10 @@ declare module "vscode" {
 
   export interface Window {
     activeTextEditor: TextEditor | undefined;
+    visibleTextEditors: TextEditor[];
     onDidChangeActiveTextEditor(listener: (editor: TextEditor | undefined) => void): Disposable;
     showWarningMessage(message: string): void;
+    showQuickPick<T extends QuickPickItem>(items: T[], options?: { placeHolder?: string }): Thenable<T | undefined>;
     showTextDocument(document: TextDocument, options?: { preview?: boolean }): Thenable<TextEditor>;
     createWebviewPanel(viewType: string, title: string, showOptions: ViewColumn, options: { enableScripts: boolean; retainContextWhenHidden: boolean }): WebviewPanel;
   }
@@ -130,6 +140,8 @@ declare module "vscode" {
   export interface Workspace {
     workspaceFolders: WorkspaceFolder[] | undefined;
     getConfiguration(section: string): WorkspaceConfiguration;
+    asRelativePath(pathOrUri: string | Uri): string;
+    findFiles(include: string, exclude?: string, maxResults?: number): Thenable<Uri[]>;
     openTextDocument(uri: Uri): Thenable<TextDocument>;
     registerCodeLensProvider(selector: LanguageSelector[], provider: CodeLensProvider): Disposable;
   }
