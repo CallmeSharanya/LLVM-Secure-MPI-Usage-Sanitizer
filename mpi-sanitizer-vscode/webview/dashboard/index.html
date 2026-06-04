@@ -7,98 +7,156 @@
   <title>MPI Sanitizer Dashboard</title>
   <style>
     :root {
-      --bg: #f6f3ea;
+      --bg: #f7f8fa;
       --panel: #ffffff;
-      --ink: #1d1b16;
-      --accent: #c14953;
-      --muted: #6a635a;
-      --border: #e2dccf;
+      --ink: #17202a;
+      --muted: #64748b;
+      --border: #dbe3ec;
+      --accent: #0f766e;
+      --danger: #b42318;
+      --warn: #b7791f;
+      --soft: #eef6f5;
     }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: radial-gradient(circle at top right, #fef7e6 0%, #f6f3ea 45%, #f1ece1 100%);
+      background: var(--bg);
       color: var(--ink);
-      font-family: "IBM Plex Serif", "Georgia", serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     header {
-      padding: 20px 24px;
+      padding: 14px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.9);
+      background: var(--panel);
     }
     header h1 {
       margin: 0;
-      font-size: 20px;
-      letter-spacing: 0.6px;
+      font-size: 17px;
+      font-weight: 650;
     }
-    #root {
-      padding: 18px 24px 28px;
-    }
+    #root { padding: 16px 20px 24px; }
     .tabs {
       display: flex;
-      gap: 12px;
-      margin-bottom: 16px;
+      gap: 8px;
+      margin-bottom: 14px;
       flex-wrap: wrap;
     }
     .tab {
       border: 1px solid var(--border);
       background: var(--panel);
-      padding: 8px 12px;
-      border-radius: 18px;
+      padding: 7px 11px;
+      border-radius: 8px;
       cursor: pointer;
       font-size: 13px;
       color: var(--muted);
     }
     .tab.active {
-      color: var(--ink);
+      color: var(--accent);
       border-color: var(--accent);
-      box-shadow: 0 3px 14px rgba(193, 73, 83, 0.12);
+      background: var(--soft);
     }
     .grid {
       display: grid;
-      gap: 16px;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+    .wide-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: minmax(280px, 1.2fr) minmax(280px, 1fr);
     }
     .card {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 16px;
-      box-shadow: 0 10px 20px rgba(29, 27, 22, 0.08);
+      border-radius: 8px;
+      padding: 14px;
     }
     .card h3 {
       margin: 0 0 12px 0;
-      font-size: 14px;
+      font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0;
       color: var(--muted);
+      font-weight: 700;
     }
+    .metric-value {
+      font-size: 26px;
+      line-height: 1.1;
+      font-weight: 720;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric-sub {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .status-ok { color: var(--accent); }
+    .status-warn { color: var(--warn); }
+    .status-bad { color: var(--danger); }
     .diag {
-      border-left: 4px solid var(--accent);
-      padding-left: 10px;
-      margin-bottom: 10px;
+      border-left: 3px solid var(--danger);
+      padding: 8px 0 8px 10px;
+      margin-bottom: 8px;
+      background: #fffafa;
     }
     .diag button {
       margin-top: 6px;
-      border: none;
-      background: var(--accent);
-      color: white;
-      padding: 6px 10px;
-      border-radius: 12px;
+      border: 1px solid var(--danger);
+      background: white;
+      color: var(--danger);
+      padding: 5px 8px;
+      border-radius: 6px;
       cursor: pointer;
+      font-size: 12px;
     }
     .muted {
       color: var(--muted);
       font-size: 12px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) minmax(80px, 3fr) 48px;
+      gap: 10px;
+      align-items: center;
+      margin: 8px 0;
+      font-size: 13px;
+    }
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: #e8edf3;
+      overflow: hidden;
+    }
+    .bar span {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+    }
+    .bar.danger span { background: var(--danger); }
+    .table {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px 16px;
+      font-size: 13px;
+    }
+    .table div:nth-child(even) {
+      font-variant-numeric: tabular-nums;
+      font-weight: 650;
+    }
+    @media (max-width: 760px) {
+      .wide-grid { grid-template-columns: 1fr; }
+      header { align-items: flex-start; gap: 6px; flex-direction: column; }
+      .row { grid-template-columns: 1fr; gap: 5px; }
     }
   </style>
 </head>
 <body>
   <header>
     <h1>MPI Sanitizer Dashboard</h1>
-    <div class="muted">Live report view</div>
+    <div class="muted" id="status">Waiting for report</div>
   </header>
   <div id="root"></div>
 
@@ -108,30 +166,115 @@
     const vscode = acquireVsCodeApi();
 
     const Tabs = {
+      SUMMARY: "Summary",
       DIAGNOSTICS: "Diagnostics",
       TOPOLOGY: "Topology",
       LATENCY: "Latency",
-      TIMELINE: "Timeline",
     };
 
-    function App() {
-      const [activeTab, setActiveTab] = React.useState(Tabs.DIAGNOSTICS);
-      const [report, setReport] = React.useState({ errors: [] });
+    const issueKeys = [
+      ["type_mismatch", "Type mismatch"],
+      ["size_mismatch", "Size mismatch"],
+      ["integrity_violation", "Integrity"],
+      ["collective_mismatch", "Collective"],
+      ["deadlock_detected", "Deadlock"],
+      ["replay_detected", "Replay"],
+      ["timeout_warning", "Timeout"],
+      ["anomaly_warning", "Anomaly"],
+      ["overlap_warning", "Overlap"],
+    ];
 
-      React.useEffect(() => {
-        window.addEventListener("message", (event) => {
-          if (event.data?.type === "report") {
-            setReport(event.data.report || { errors: [] });
-          }
-        });
-      }, []);
+    function n(value) {
+      return Number.isFinite(Number(value)) ? Number(value) : 0;
+    }
 
-      const errors = report.errors || [];
+    function fmt(value) {
+      return n(value).toLocaleString();
+    }
 
-      const diagnosticsView = React.createElement("div", { className: "card" },
+    function latency(value) {
+      return value === null || value === undefined ? "N/A" : `${Number(value).toFixed(6)}s`;
+    }
+
+    function MetricCard({ title, value, sub, tone }) {
+      return React.createElement("div", { className: "card" },
+        React.createElement("h3", null, title),
+        React.createElement("div", { className: `metric-value ${tone || ""}` }, value),
+        sub ? React.createElement("div", { className: "metric-sub" }, sub) : null
+      );
+    }
+
+    function Breakdown({ summary }) {
+      const max = Math.max(1, ...issueKeys.map(([key]) => n(summary[key])));
+      return React.createElement("div", { className: "card" },
+        React.createElement("h3", null, "Issue Breakdown"),
+        issueKeys.map(([key, label]) => {
+          const value = n(summary[key]);
+          const pct = Math.max(2, Math.round((value / max) * 100));
+          return React.createElement("div", { className: "row", key },
+            React.createElement("div", null, label),
+            React.createElement("div", { className: `bar ${value > 0 ? "danger" : ""}` },
+              React.createElement("span", { style: { width: `${pct}%` } })
+            ),
+            React.createElement("div", null, fmt(value))
+          );
+        })
+      );
+    }
+
+    function SummaryView({ summary }) {
+      const errors = n(summary.errors_detected);
+      return React.createElement("div", null,
+        React.createElement("div", { className: "grid" },
+          React.createElement(MetricCard, {
+            title: "Errors",
+            value: fmt(errors),
+            sub: errors === 0 ? "No runtime issues counted" : "Runtime issues counted",
+            tone: errors === 0 ? "status-ok" : "status-bad",
+          }),
+          React.createElement(MetricCard, {
+            title: "Events",
+            value: fmt(summary.total_events),
+            sub: `${fmt(summary.sends)} sends, ${fmt(summary.recvs)} recvs`,
+          }),
+          React.createElement(MetricCard, {
+            title: "Matched Pairs",
+            value: fmt(summary.matched_pairs),
+            sub: `${fmt(summary.unmatched_sends)} unmatched sends, ${fmt(summary.unmatched_recvs)} unmatched recvs`,
+            tone: n(summary.unmatched_sends) + n(summary.unmatched_recvs) > 0 ? "status-warn" : "status-ok",
+          }),
+          React.createElement(MetricCard, {
+            title: "Avg P2P Latency",
+            value: latency(summary.avg_p2p_latency),
+            sub: "Measured from matched send/recv timestamps",
+          })
+        ),
+        React.createElement("div", { style: { height: 12 } }),
+        React.createElement("div", { className: "wide-grid" },
+          React.createElement(Breakdown, { summary }),
+          React.createElement(CommunicationCard, { summary })
+        )
+      );
+    }
+
+    function CommunicationCard({ summary }) {
+      return React.createElement("div", { className: "card" },
+        React.createElement("h3", null, "Communication"),
+        React.createElement("div", { className: "table" },
+          React.createElement("div", null, "Sends"), React.createElement("div", null, fmt(summary.sends)),
+          React.createElement("div", null, "Recvs"), React.createElement("div", null, fmt(summary.recvs)),
+          React.createElement("div", null, "Collectives"), React.createElement("div", null, fmt(summary.collectives)),
+          React.createElement("div", null, "Matched pairs"), React.createElement("div", null, fmt(summary.matched_pairs)),
+          React.createElement("div", null, "Graph file"), React.createElement("div", null, summary.comm_graph || "N/A")
+        )
+      );
+    }
+
+    function DiagnosticsView({ errors }) {
+      return React.createElement("div", { className: "card" },
         React.createElement("h3", null, "Diagnostics"),
         errors.length === 0
-          ? React.createElement("div", { className: "muted" }, "No diagnostics yet. Run MPI Sanitize.")
+          ? React.createElement("div", { className: "muted" }, "No source diagnostics recorded.")
           : errors.map((e, idx) => React.createElement("div", { key: idx, className: "diag" },
               React.createElement("div", null, `[rank ${e.rank ?? "?"}] ${e.message}`),
               React.createElement("div", { className: "muted" }, `${e.file}:${e.line}`),
@@ -140,24 +283,74 @@
               }, "Go to source") : null
             ))
       );
+    }
 
-      const placeholder = (title, text) => React.createElement("div", { className: "card" },
-        React.createElement("h3", null, title),
-        React.createElement("div", { className: "muted" }, text)
-      );
+    function App() {
+      const [activeTab, setActiveTab] = React.useState(Tabs.SUMMARY);
+      const [report, setReport] = React.useState({ errors: [], summary: {} });
 
-      const body = activeTab === Tabs.DIAGNOSTICS
-        ? diagnosticsView
-        : React.createElement("div", { className: "grid" },
-            placeholder("Topology", "Communication graph renders here."),
-            placeholder("Latency", "Latency bars and stats render here."),
-            placeholder("Timeline", "Per-rank swimlanes render here.")
-          );
+      React.useEffect(() => {
+        const listener = (event) => {
+          if (event.data?.type === "report") {
+            const nextReport = event.data.report || { errors: [], summary: {} };
+            setReport(nextReport);
+            const status = document.getElementById("status");
+            if (status) {
+              const total = n(nextReport.summary?.total_events);
+              status.textContent = total > 0 ? `${fmt(total)} events analyzed` : "Report loaded";
+            }
+          }
+        };
+        window.addEventListener("message", listener);
+        return () => window.removeEventListener("message", listener);
+      }, []);
+
+      const summary = report.summary || {};
+      const errors = report.errors || [];
+      const hasSummary = Object.keys(summary).length > 0;
+
+      if (!hasSummary) {
+        return React.createElement("div", { className: "card" },
+          React.createElement("h3", null, "Summary"),
+          React.createElement("div", { className: "muted" }, "No metrics available yet.")
+        );
+      }
+
+      let body;
+      if (activeTab === Tabs.SUMMARY) {
+        body = React.createElement(SummaryView, { summary });
+      } else if (activeTab === Tabs.DIAGNOSTICS) {
+        body = React.createElement(DiagnosticsView, { errors });
+      } else if (activeTab === Tabs.TOPOLOGY) {
+        body = React.createElement("div", { className: "wide-grid" },
+          React.createElement(CommunicationCard, { summary }),
+          React.createElement(MetricCard, {
+            title: "Collectives",
+            value: fmt(summary.collectives),
+            sub: `${fmt(summary.collective_mismatch)} collective mismatches`,
+            tone: n(summary.collective_mismatch) > 0 ? "status-bad" : "status-ok",
+          })
+        );
+      } else {
+        body = React.createElement("div", { className: "grid" },
+          React.createElement(MetricCard, {
+            title: "Avg P2P Latency",
+            value: latency(summary.avg_p2p_latency),
+            sub: `${fmt(summary.matched_pairs)} matched pairs`,
+          }),
+          React.createElement(MetricCard, {
+            title: "Timeout Warnings",
+            value: fmt(summary.timeout_warning),
+            sub: `${fmt(summary.deadlock_detected)} deadlocks detected`,
+            tone: n(summary.timeout_warning) + n(summary.deadlock_detected) > 0 ? "status-bad" : "status-ok",
+          })
+        );
+      }
 
       return React.createElement("div", null,
         React.createElement("div", { className: "tabs" },
           Object.values(Tabs).map((tab) =>
-            React.createElement("div", {
+            React.createElement("button", {
               key: tab,
               className: `tab ${activeTab === tab ? "active" : ""}`,
               onClick: () => setActiveTab(tab),

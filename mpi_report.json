@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "total_events": 2,
+    "sends": 1,
+    "recvs": 1,
+    "collectives": 0,
+    "matched_pairs": 1,
+    "unmatched_sends": 0,
+    "unmatched_recvs": 0,
+    "errors_detected": 2,
+    "type_mismatch": 0,
+    "size_mismatch": 1,
+    "integrity_violation": 1,
+    "collective_mismatch": 0,
+    "deadlock_detected": 0,
+    "replay_detected": 0,
+    "timeout_warning": 0,
+    "anomaly_warning": 0,
+    "overlap_warning": 0,
+    "avg_p2p_latency": null,
+    "comm_graph": "msan_comm_graph.dot"
+  },
+  "errors": []
+}

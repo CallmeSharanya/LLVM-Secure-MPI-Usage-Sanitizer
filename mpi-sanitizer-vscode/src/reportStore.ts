@@ -19,6 +19,29 @@ export interface MpiReportEntry {
 
 export interface MpiReport {
   errors: MpiReportEntry[];
+  summary?: MpiReportSummary;
+}
+
+export interface MpiReportSummary {
+  total_events?: number;
+  sends?: number;
+  recvs?: number;
+  collectives?: number;
+  matched_pairs?: number;
+  unmatched_sends?: number;
+  unmatched_recvs?: number;
+  errors_detected?: number;
+  type_mismatch?: number;
+  size_mismatch?: number;
+  integrity_violation?: number;
+  collective_mismatch?: number;
+  deadlock_detected?: number;
+  replay_detected?: number;
+  timeout_warning?: number;
+  anomaly_warning?: number;
+  overlap_warning?: number;
+  avg_p2p_latency?: number | null;
+  comm_graph?: string;
 }
 
 export class ReportStore {
@@ -27,12 +50,21 @@ export class ReportStore {
   private watcher?: fs.FSWatcher;
   private debounce?: NodeJS.Timeout;
 
-  constructor(private readonly root: string, private readonly reportPath: string) {}
+  constructor(private root: string, private reportPath: string) {}
 
   onDidUpdate = this.emitter.event;
 
   getReport(): MpiReport {
     return this.report;
+  }
+
+  setReportPath(root: string, reportPath: string): void {
+    if (this.root === root && this.reportPath === reportPath) {
+      return;
+    }
+    this.root = root;
+    this.reportPath = reportPath;
+    this.startWatching();
   }
 
   getEntriesForFileLine(file: string, line1: number): MpiReportEntry[] {
@@ -81,7 +113,7 @@ export class ReportStore {
 
   private async loadReport(): Promise<void> {
     const raw = await fs.promises.readFile(this.reportPath, "utf8");
-    const json: { errors?: unknown } = JSON.parse(raw);
+    const json: { errors?: unknown; summary?: unknown } = JSON.parse(raw);
     const errors = Array.isArray(json.errors) ? json.errors : [];
 
     const sanitized: MpiReportEntry[] = errors
@@ -103,7 +135,41 @@ export class ReportStore {
       })
       .filter((e) => e.file && e.line > 0 && e.message);
 
-    this.report = { errors: sanitized };
+    this.report = { errors: sanitized, summary: sanitizeSummary(json.summary) };
     this.emitter.fire(this.report);
   }
+}
+
+function sanitizeSummary(summary: unknown): MpiReportSummary | undefined {
+  if (typeof summary !== "object" || summary === null) {
+    return undefined;
+  }
+
+  const input = summary as Record<string, unknown>;
+  return {
+    total_events: numberValue(input.total_events),
+    sends: numberValue(input.sends),
+    recvs: numberValue(input.recvs),
+    collectives: numberValue(input.collectives),
+    matched_pairs: numberValue(input.matched_pairs),
+    unmatched_sends: numberValue(input.unmatched_sends),
+    unmatched_recvs: numberValue(input.unmatched_recvs),
+    errors_detected: numberValue(input.errors_detected),
+    type_mismatch: numberValue(input.type_mismatch),
+    size_mismatch: numberValue(input.size_mismatch),
+    integrity_violation: numberValue(input.integrity_violation),
+    collective_mismatch: numberValue(input.collective_mismatch),
+    deadlock_detected: numberValue(input.deadlock_detected),
+    replay_detected: numberValue(input.replay_detected),
+    timeout_warning: numberValue(input.timeout_warning),
+    anomaly_warning: numberValue(input.anomaly_warning),
+    overlap_warning: numberValue(input.overlap_warning),
+    avg_p2p_latency: input.avg_p2p_latency === null ? null : numberValue(input.avg_p2p_latency),
+    comm_graph: input.comm_graph !== undefined ? String(input.comm_graph) : undefined,
+  };
+}
+
+function numberValue(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

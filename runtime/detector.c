@@ -178,6 +178,63 @@ static void msan_generate_dot_graph(MsanEvent *all, size_t total) {
   fprintf(stderr, "[msan][info] Communication graph generated: msan_comm_graph.dot\n");
 }
 
+static void msan_write_json_report(size_t total_events,
+                                   int send_count,
+                                   int recv_count,
+                                   int coll_count,
+                                   int matched_pairs,
+                                   int unmatched_send_count,
+                                   int unmatched_recv_count,
+                                   int total_errors,
+                                   int type_mismatch_count,
+                                   int size_mismatch_count,
+                                   int integrity_count,
+                                   int coll_mismatch_count,
+                                   int deadlock_count,
+                                   int replay_count,
+                                   int timeout_count,
+                                   int anomaly_count,
+                                   int overlap_count,
+                                   int lat_count,
+                                   double avg_latency) {
+  FILE *f = fopen("mpi_report.json", "w");
+  if (!f) {
+    fprintf(stderr, "[msan][warning] failed to write mpi_report.json\n");
+    return;
+  }
+
+  fprintf(f, "{\n");
+  fprintf(f, "  \"summary\": {\n");
+  fprintf(f, "    \"total_events\": %zu,\n", total_events);
+  fprintf(f, "    \"sends\": %d,\n", send_count);
+  fprintf(f, "    \"recvs\": %d,\n", recv_count);
+  fprintf(f, "    \"collectives\": %d,\n", coll_count);
+  fprintf(f, "    \"matched_pairs\": %d,\n", matched_pairs);
+  fprintf(f, "    \"unmatched_sends\": %d,\n", unmatched_send_count);
+  fprintf(f, "    \"unmatched_recvs\": %d,\n", unmatched_recv_count);
+  fprintf(f, "    \"errors_detected\": %d,\n", total_errors);
+  fprintf(f, "    \"type_mismatch\": %d,\n", type_mismatch_count);
+  fprintf(f, "    \"size_mismatch\": %d,\n", size_mismatch_count);
+  fprintf(f, "    \"integrity_violation\": %d,\n", integrity_count);
+  fprintf(f, "    \"collective_mismatch\": %d,\n", coll_mismatch_count);
+  fprintf(f, "    \"deadlock_detected\": %d,\n", deadlock_count);
+  fprintf(f, "    \"replay_detected\": %d,\n", replay_count);
+  fprintf(f, "    \"timeout_warning\": %d,\n", timeout_count);
+  fprintf(f, "    \"anomaly_warning\": %d,\n", anomaly_count);
+  fprintf(f, "    \"overlap_warning\": %d,\n", overlap_count);
+  if (lat_count > 0) {
+    fprintf(f, "    \"avg_p2p_latency\": %.9f,\n", avg_latency);
+  } else {
+    fprintf(f, "    \"avg_p2p_latency\": null,\n");
+  }
+  fprintf(f, "    \"comm_graph\": \"msan_comm_graph.dot\"\n");
+  fprintf(f, "  },\n");
+  fprintf(f, "  \"errors\": []\n");
+  fprintf(f, "}\n");
+
+  fclose(f);
+}
+
 void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
   uint8_t *used = (uint8_t *)calloc(total, 1);
   if (!used) return;
@@ -399,6 +456,7 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
                        integrity_count + coll_mismatch_count +
                        deadlock_count + replay_count + timeout_count +
                        anomaly_count + overlap_count;
+    double avg_latency = lat_count > 0 ? total_lat / lat_count : 0.0;
 
     fprintf(stderr, "[msan][summary] ============================================\n");
     fprintf(stderr, "[msan][summary] MPI Sanitizer — Analysis Complete\n");
@@ -420,12 +478,19 @@ void msan_analyze_events(MsanEvent *all, size_t total, int num_ranks) {
     fprintf(stderr, "[msan][summary]   anomaly-warning     : %d\n", anomaly_count);
     fprintf(stderr, "[msan][summary]   overlap-warning     : %d\n", overlap_count);
     if (lat_count > 0) {
-      fprintf(stderr, "[msan][summary] Avg P2P latency       : %.6fs\n", total_lat / lat_count);
+      fprintf(stderr, "[msan][summary] Avg P2P latency       : %.6fs\n", avg_latency);
     } else {
       fprintf(stderr, "[msan][summary] Avg P2P latency       : N/A\n");
     }
     fprintf(stderr, "[msan][summary] Comm graph written to : msan_comm_graph.dot\n");
     fprintf(stderr, "[msan][summary] ============================================\n");
+
+    msan_write_json_report(total, send_count, recv_count, coll_count, matched_pairs,
+                           unmatched_send_count, unmatched_recv_count, total_errors,
+                           type_mismatch_count, size_mismatch_count, integrity_count,
+                           coll_mismatch_count, deadlock_count, replay_count,
+                           timeout_count, anomaly_count, overlap_count, lat_count,
+                           avg_latency);
   }
 
   free(used);

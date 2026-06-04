@@ -67,13 +67,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mpiSanitize.buildAnalyze", async () => {
-      await runBuildAnalyze();
+      await runBuildAnalyze(store);
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("mpiSanitize.buildAnalyse", async () => {
-      await runBuildAnalyze();
+      await runBuildAnalyze(store);
     })
   );
 
@@ -118,9 +118,9 @@ function createTaskForFile(inputFile: string, root: string): vscode.Task {
   const objCmd = `${quote(compiler)} -g -O0 -c ${quote(instBcFile)} -o ${quote(objFile)}`;
   const linkCmd = `${quote(mpiCompiler)} -g -O0 ${quote(objFile)} ${quote(runtimeLib)} -lm -Wl,-rpath,${quote(runtimeDir)} -o ${quote(output)}`;
   const runCmd = `${mpirun} ${mpiArgs.map(quote).join(" ")} ${quote(output)}`;
-  const command = `${makeOutDirCmd} && ${emitBcCmd} && ${optCmd} && ${objCmd} && ${linkCmd} && ${runCmd}`;
-
   const hasWorkspace = Boolean(vscode.workspace.workspaceFolders?.length);
+  const baseCommand = `${makeOutDirCmd} && ${emitBcCmd} && ${optCmd} && ${objCmd} && ${linkCmd} && ${runCmd}`;
+  const command = hasWorkspace ? baseCommand : `cd ${quote(root)} && ${baseCommand}`;
   const taskScope = hasWorkspace ? vscode.TaskScope.Workspace : vscode.TaskScope.Global;
   const shellOptions = hasWorkspace ? { cwd: root } : undefined;
 
@@ -133,7 +133,7 @@ function createTaskForFile(inputFile: string, root: string): vscode.Task {
   );
 }
 
-async function runBuildAnalyze(): Promise<void> {
+async function runBuildAnalyze(store: ReportStore): Promise<void> {
   const inputFile = await selectCFile();
   if (!inputFile) {
     vscode.window.showWarningMessage("Open a C/C++ file to run MPI Sanitize.");
@@ -142,6 +142,10 @@ async function runBuildAnalyze(): Promise<void> {
   currentFilePath = inputFile;
 
   const root = getWorkspaceRootForFile(inputFile);
+  const config = vscode.workspace.getConfiguration("mpiSanitize");
+  const reportPath = resolveWithWorkspace(config.get<string>("reportPath") || "", root);
+  store.setReportPath(root, reportPath);
+
   const task = createTaskForFile(inputFile, root);
   await vscode.tasks.executeTask(task);
 }
