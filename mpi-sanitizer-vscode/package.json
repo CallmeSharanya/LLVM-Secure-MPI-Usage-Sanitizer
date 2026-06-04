@@ -12,6 +12,7 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:mpiSanitize.buildAnalyze",
     "onCommand:mpiSanitize.buildAnalyse",
     "onCommand:mpiSanitize.openDashboard",

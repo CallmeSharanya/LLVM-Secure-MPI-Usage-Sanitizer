@@ -9,10 +9,7 @@ let client: any;
 let currentFilePath: string | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspaceRoot) {
-    return;
-  }
+  const workspaceRoot = getWorkspaceRoot(context);
 
   const config = vscode.workspace.getConfiguration("mpiSanitize");
   const reportPath = resolveWithWorkspace(config.get<string>("reportPath") || "", workspaceRoot);
@@ -156,6 +153,14 @@ function resolveWithWorkspace(value: string, root: string): string {
   }
   const resolved = value.replace("${workspaceFolder}", root);
   return path.isAbsolute(resolved) ? resolved : path.resolve(root, resolved);
+}
+
+function getWorkspaceRoot(context: vscode.ExtensionContext): string {
+  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (folder) {
+    return folder;
+  }
+  return context.extensionPath;
 }
 
 function quote(value: string): string {
