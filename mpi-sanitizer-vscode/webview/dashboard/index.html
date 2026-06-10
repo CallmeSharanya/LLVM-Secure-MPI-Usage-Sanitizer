@@ -146,8 +146,67 @@
       font-variant-numeric: tabular-nums;
       font-weight: 650;
     }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .badge.ok { background: #e8fff8; color: #12725d; border-color: #b7eadc; }
+    .badge.warn { background: #fff7e8; color: #9a6400; border-color: #f2d7a0; }
+    .badge.bad { background: #fff0f0; color: #b42318; border-color: #f4bcbc; }
+    .topology-layout {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: minmax(320px, 1.3fr) minmax(260px, 0.8fr);
+      align-items: start;
+    }
+    .activity-list {
+      display: grid;
+      gap: 10px;
+      max-height: 420px;
+      overflow: auto;
+    }
+    .activity-item {
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: linear-gradient(180deg, #ffffff, #fbfdff);
+    }
+    .activity-item.warn { border-left-color: var(--warn); }
+    .activity-item.bad { border-left-color: var(--danger); }
+    .activity-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .activity-title {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .activity-meta {
+      margin-top: 6px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .activity-sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
     @media (max-width: 760px) {
       .wide-grid { grid-template-columns: 1fr; }
+      .topology-layout { grid-template-columns: 1fr; }
       header { align-items: flex-start; gap: 6px; flex-direction: column; }
       .row { grid-template-columns: 1fr; gap: 5px; }
     }
@@ -162,6 +221,7 @@
 
   <script nonce="{{NONCE}}" src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script nonce="{{NONCE}}" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script nonce="{{NONCE}}" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <script nonce="{{NONCE}}">
     const vscode = acquireVsCodeApi();
 
@@ -287,12 +347,12 @@
 
     function App() {
       const [activeTab, setActiveTab] = React.useState(Tabs.SUMMARY);
-      const [report, setReport] = React.useState({ errors: [], summary: {} });
+      const [report, setReport] = React.useState({ errors: [], summary: {}, activity: [] });
 
       React.useEffect(() => {
         const listener = (event) => {
           if (event.data?.type === "report") {
-            const nextReport = event.data.report || { errors: [], summary: {} };
+            const nextReport = event.data.report || { errors: [], summary: {}, activity: [] };
             setReport(nextReport);
             const status = document.getElementById("status");
             if (status) {
@@ -307,6 +367,7 @@
 
       const summary = report.summary || {};
       const errors = report.errors || [];
+      const activity = report.activity || [];
       const hasSummary = Object.keys(summary).length > 0;
 
       if (!hasSummary) {
@@ -322,14 +383,9 @@
       } else if (activeTab === Tabs.DIAGNOSTICS) {
         body = React.createElement(DiagnosticsView, { errors });
       } else if (activeTab === Tabs.TOPOLOGY) {
-        body = React.createElement("div", { className: "wide-grid" },
-          React.createElement(CommunicationCard, { summary }),
-          React.createElement(MetricCard, {
-            title: "Collectives",
-            value: fmt(summary.collectives),
-            sub: `${fmt(summary.collective_mismatch)} collective mismatches`,
-            tone: n(summary.collective_mismatch) > 0 ? "status-bad" : "status-ok",
-          })
+        body = React.createElement("div", { className: "topology-layout" },
+          React.createElement(NetworkView, { summary, activity }),
+          React.createElement(ActivityView, { activity })
         );
       } else {
         body = React.createElement("div", { className: "grid" },
@@ -362,6 +418,120 @@
     }
 
     ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+
+    function activityTone(activityItem) {
+      if (activityItem.integrity === "flagged" || activityItem.auth === "unverified") {
+        return "bad";
+      }
+      if (activityItem.severity === "warning") {
+        return "warn";
+      }
+      return "ok";
+    }
+
+    function badgeText(activityItem) {
+      const bits = [];
+      if (activityItem.direction) bits.push(activityItem.direction);
+      if (activityItem.integrity) bits.push(activityItem.integrity === "flagged" ? "integrity-failed" : "integrity-ok");
+      if (activityItem.auth) bits.push(activityItem.auth === "unverified" ? "auth-check" : "auth-ok");
+      return bits.join(" · ");
+    }
+
+    function ActivityView({ activity }) {
+      return React.createElement("div", { className: "card" },
+        React.createElement("h3", null, "Live Activity"),
+        activity.length === 0
+          ? React.createElement("div", { className: "muted" }, "No live message events were present in the latest report.")
+          : React.createElement("div", { className: "activity-list" },
+              activity.slice(0, 8).map((item) =>
+                React.createElement("div", { key: item.id, className: `activity-item ${activityTone(item)}` },
+                  React.createElement("div", { className: "activity-top" },
+                    React.createElement("div", null,
+                      React.createElement("div", { className: "activity-title" }, item.label),
+                      React.createElement("div", { className: "activity-meta" },
+                        React.createElement("span", { className: `badge ${activityTone(item)}` }, item.kind),
+                        item.rank !== undefined ? React.createElement("span", { className: "badge ok" }, `rank ${item.rank}`) : null,
+                        item.peer !== undefined ? React.createElement("span", { className: "badge ok" }, `peer ${item.peer}`) : null,
+                        item.severity ? React.createElement("span", { className: `badge ${item.severity === "error" ? "bad" : item.severity === "warning" ? "warn" : "ok"}` }, item.severity) : null
+                      )
+                    ),
+                    React.createElement("div", { className: "muted" }, badgeText(item))
+                  ),
+                  React.createElement("div", { className: "activity-sub" },
+                    item.file && item.line ? `${item.file}:${item.line}` : "Derived from the latest report entry"
+                  )
+                )
+              )
+            )
+      );
+    }
+
+    function NetworkView({ summary, activity }) {
+      const containerRef = React.useRef(null);
+      const networkRef = React.useRef(null);
+      const seenRef = React.useRef(new Set());
+
+      React.useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const nodes = new vis.DataSet([
+          { id: 0, label: 'Rank 0', color: { background: '#e6fffb' } },
+          { id: 1, label: 'Rank 1', color: { background: '#e6fffb' } }
+        ]);
+        const edges = new vis.DataSet([]);
+        const data = { nodes, edges };
+        const options = {
+          edges: { smooth: { type: 'dynamic' }, arrows: { to: { enabled: true, scaleFactor: 0.6 } } },
+          physics: { enabled: false },
+          interaction: { hover: true }
+        };
+        networkRef.current = new vis.Network(container, data, options);
+
+        function animateMessage(eventItem) {
+          const id = `m-${eventItem.id}`;
+          const src = Number.isFinite(Number(eventItem.rank)) ? Number(eventItem.rank) : 0;
+          const dst = Number.isFinite(Number(eventItem.peer)) ? Number(eventItem.peer) : (src === 0 ? 1 : 0);
+          const color = eventItem.integrity === 'flagged' || eventItem.auth === 'unverified' ? '#b42318' : '#0f766e';
+          edges.add({
+            id,
+            from: eventItem.direction === 'recv' ? dst : src,
+            to: eventItem.direction === 'recv' ? src : dst,
+            label: eventItem.kind,
+            color: { color },
+            width: 3
+          });
+          setTimeout(() => edges.remove(id), 900);
+        }
+
+        for (const item of activity || []) {
+          if (seenRef.current.has(item.id)) {
+            continue;
+          }
+          seenRef.current.add(item.id);
+          animateMessage(item);
+        }
+
+        return () => {};
+      }, [activity]);
+
+      return React.createElement('div', { style: { display: 'grid', gap: 12 } },
+        React.createElement('div', { className: 'card' },
+          React.createElement('h3', null, 'Topology Visualizer'),
+          React.createElement('div', { ref: containerRef, style: { height: 280 } })
+        ),
+        React.createElement('div', { className: 'card' },
+          React.createElement('h3', null, 'Security Signals'),
+          React.createElement('div', { className: 'table' },
+            React.createElement('div', null, 'Sends'), React.createElement('div', null, fmt(summary.sends)),
+            React.createElement('div', null, 'Recvs'), React.createElement('div', null, fmt(summary.recvs)),
+            React.createElement('div', null, 'Integrity'), React.createElement('div', null, fmt(summary.integrity_violation)),
+            React.createElement('div', null, 'Replay'), React.createElement('div', null, fmt(summary.replay_detected)),
+            React.createElement('div', null, 'Warnings'), React.createElement('div', null, fmt(n(summary.timeout_warning) + n(summary.anomaly_warning) + n(summary.overlap_warning)))
+          )
+        )
+      );
+    }
   </script>
 </body>
 </html>

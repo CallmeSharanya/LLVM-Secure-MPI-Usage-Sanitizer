@@ -17,9 +17,25 @@ export interface MpiReportEntry {
   peer_line?: number;
 }
 
+export interface MpiActivityEvent {
+  id: string;
+  kind: string;
+  label: string;
+  rank?: number;
+  peer?: number;
+  type?: string;
+  severity?: MpiSeverity;
+  file?: string;
+  line?: number;
+  integrity?: "ok" | "flagged";
+  auth?: "verified" | "unverified";
+  direction?: "send" | "recv" | "collective" | "event";
+}
+
 export interface MpiReport {
   errors: MpiReportEntry[];
   summary?: MpiReportSummary;
+  activity?: MpiActivityEvent[];
 }
 
 export interface MpiReportSummary {
@@ -135,9 +151,75 @@ export class ReportStore {
       })
       .filter((e) => e.file && e.line > 0 && e.message);
 
-    this.report = { errors: sanitized, summary: sanitizeSummary(json.summary) };
+    const summary = sanitizeSummary(json.summary);
+    this.report = {
+      errors: sanitized,
+      summary,
+      activity: deriveActivity(sanitized, summary),
+    };
     this.emitter.fire(this.report);
   }
+}
+
+function deriveActivity(errors: MpiReportEntry[], summary?: MpiReportSummary): MpiActivityEvent[] {
+  const activity: MpiActivityEvent[] = [];
+
+  for (const [index, entry] of errors.entries()) {
+    const direction = inferDirection(entry);
+    const integrity = entry.type && /integrity|replay/i.test(entry.type) ? "flagged" : "ok";
+    const auth = entry.severity === "error" || entry.severity === "warning" ? "unverified" : "verified";
+    activity.push({
+      id: `${entry.file}:${entry.line}:${entry.rank ?? "?"}:${entry.peer ?? "?"}:${entry.type ?? "event"}:${index}`,
+      kind: entry.type || "event",
+      label: entry.message,
+      rank: entry.rank,
+      peer: entry.peer,
+      type: entry.type,
+      severity: entry.severity,
+      file: entry.file,
+      line: entry.line,
+      integrity,
+      auth,
+      direction,
+    });
+  }
+
+  if (activity.length === 0 && summary) {
+    const seeds: Array<{ kind: string; label: string; direction: MpiActivityEvent["direction"] }> = [
+      { kind: "send", label: `${summary.sends ?? 0} send events`, direction: "send" },
+      { kind: "recv", label: `${summary.recvs ?? 0} recv events`, direction: "recv" },
+      { kind: "collective", label: `${summary.collectives ?? 0} collective events`, direction: "collective" },
+    ];
+
+    for (const [index, seed] of seeds.entries()) {
+      activity.push({
+        id: `summary:${seed.kind}:${index}`,
+        kind: seed.kind,
+        label: seed.label,
+        integrity: "ok",
+        auth: "verified",
+        direction: seed.direction,
+      });
+    }
+  }
+
+  return activity;
+}
+
+function inferDirection(entry: MpiReportEntry): MpiActivityEvent["direction"] {
+  if (entry.type && /collective/i.test(entry.type)) {
+    return "collective";
+  }
+  if (entry.peer !== undefined) {
+    return entry.rank !== undefined && entry.rank <= entry.peer ? "send" : "recv";
+  }
+  if (entry.type && /recv/i.test(entry.type)) {
+    return "recv";
+  }
+  if (entry.type && /send/i.test(entry.type)) {
+    return "send";
+  }
+  return "event";
 }
 
 function sanitizeSummary(summary: unknown): MpiReportSummary | undefined {

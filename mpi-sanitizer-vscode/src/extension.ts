@@ -110,26 +110,31 @@ function createTaskForFile(inputFile: string, root: string): vscode.Task {
   const objFile = path.join(outDir, `${base}.o`);
   const output = path.join(outDir, `${base}_san`);
   const runtimeDir = path.dirname(runtimeLib);
-
-  const mpiCompileFlags = `$(${quote(mpiCompiler)} --showme:compile)`;
-  const makeOutDirCmd = `mkdir -p ${quote(outDir)}`;
-  const emitBcCmd = `${quote(compiler)} -g -O0 -emit-llvm -c ${mpiCompileFlags} ${quote(inputFile)} -o ${quote(bcFile)}`;
-  const optCmd = `${quote(opt)} -load-pass-plugin=${quote(plugin)} -passes=mpi-sanitize ${quote(bcFile)} -o ${quote(instBcFile)}`;
-  const objCmd = `${quote(compiler)} -g -O0 -c ${quote(instBcFile)} -o ${quote(objFile)}`;
-  const linkCmd = `${quote(mpiCompiler)} -g -O0 ${quote(objFile)} ${quote(runtimeLib)} -lm -Wl,-rpath,${quote(runtimeDir)} -o ${quote(output)}`;
-  const runCmd = `${mpirun} ${mpiArgs.map(quote).join(" ")} ${quote(output)}`;
-  const hasWorkspace = Boolean(vscode.workspace.workspaceFolders?.length);
-  const baseCommand = `${makeOutDirCmd} && ${emitBcCmd} && ${optCmd} && ${objCmd} && ${linkCmd} && ${runCmd}`;
-  const command = hasWorkspace ? baseCommand : `cd ${quote(root)} && ${baseCommand}`;
-  const taskScope = hasWorkspace ? vscode.TaskScope.Workspace : vscode.TaskScope.Global;
-  const shellOptions = hasWorkspace ? { cwd: root } : undefined;
+  const execution = createTaskExecution({
+    compiler,
+    mpiCompiler,
+    opt,
+    plugin,
+    runtimeLib,
+    runtimeDir,
+    mpiArgs,
+    inputFile,
+    bcFile,
+    instBcFile,
+    objFile,
+    output,
+    outDir,
+    root,
+    mpirun,
+  });
+  const taskScope = vscode.workspace.workspaceFolders?.length ? vscode.TaskScope.Workspace : vscode.TaskScope.Global;
 
   return new vscode.Task(
     { type: "mpi-sanitize" },
     taskScope,
     "MPI Sanitize: Build & Analyze",
     "mpi-sanitizer",
-    new vscode.ShellExecution(command, shellOptions)
+    execution
   );
 }
 
@@ -322,4 +327,64 @@ function quote(value: string): string {
     return `"${value}"`;
   }
   return value;
+}
+
+function createTaskExecution(params: {
+  compiler: string;
+  mpiCompiler: string;
+  opt: string;
+  plugin: string;
+  runtimeLib: string;
+  runtimeDir: string;
+  mpiArgs: string[];
+  inputFile: string;
+  bcFile: string;
+  instBcFile: string;
+  objFile: string;
+  output: string;
+  outDir: string;
+  root: string;
+  mpirun: string;
+}): vscode.ProcessExecution {
+  const script = `
+const fs = require("fs");
+const cp = require("child_process");
+
+const options = ${JSON.stringify(params)};
+
+function run(command, args) {
+  cp.execFileSync(command, args, { stdio: "inherit", cwd: options.root });
+}
+
+function splitArgs(text) {
+  if (!text) {
+    return [];
+  }
+
+  const args = [];
+  const re = /(?:[^\s"']+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')+/g;
+  for (const match of text.match(re) || []) {
+    if ((match.startsWith('"') && match.endsWith('"')) || (match.startsWith("'") && match.endsWith("'"))) {
+      args.push(match.slice(1, -1));
+    } else {
+      args.push(match);
+    }
+  }
+  return args;
+}
+
+fs.mkdirSync(options.outDir, { recursive: true });
+const compileFlags = cp.execFileSync(options.mpiCompiler, ["--showme:compile"], {
+  encoding: "utf8",
+  cwd: options.root,
+}).trim();
+
+run(options.compiler, ["-g", "-O0", "-emit-llvm", "-c", ...splitArgs(compileFlags), options.inputFile, "-o", options.bcFile]);
+run(options.opt, ["-load-pass-plugin=" + options.plugin, "-passes=mpi-sanitize", options.bcFile, "-o", options.instBcFile]);
+run(options.compiler, ["-g", "-O0", "-c", options.instBcFile, "-o", options.objFile]);
+run(options.mpiCompiler, ["-g", "-O0", options.objFile, options.runtimeLib, "-lm", "-Wl,-rpath," + options.runtimeDir, "-o", options.output]);
+run(options.mpirun, [...options.mpiArgs, options.output]);
+`;
+
+  return new vscode.ProcessExecution("node", ["-e", script], { cwd: params.root });
 }
