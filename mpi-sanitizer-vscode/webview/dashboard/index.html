@@ -464,15 +464,15 @@
 
     function postureScore(summary) {
       let score = 100;
-      score -= n(summary.errors_detected) * 12;
-      score -= (n(summary.type_mismatch) + n(summary.size_mismatch) + n(summary.integrity_violation)) * 30;
-      score -= n(summary.collective_mismatch) * 15;
-      score -= n(summary.deadlock_detected) * 100;
-      score -= n(summary.replay_detected) * 100;
-      score -= n(summary.timeout_warning) * 20;
-      score -= n(summary.overlap_warning) * 7;
-      score -= n(summary.anomaly_warning) * 5;
-      score -= (n(summary.unmatched_sends) + n(summary.unmatched_recvs)) * 10;
+      score -= n(summary.errors_detected) * 5;
+      score -= (n(summary.type_mismatch) + n(summary.size_mismatch) + n(summary.integrity_violation)) * 15;
+      score -= n(summary.collective_mismatch) * 10;
+      score -= n(summary.deadlock_detected) * 20;
+      score -= n(summary.replay_detected) * 20;
+      score -= n(summary.timeout_warning) * 10;
+      score -= n(summary.overlap_warning) * 5;
+      score -= n(summary.anomaly_warning) * 3;
+      score -= (n(summary.unmatched_sends) + n(summary.unmatched_recvs)) * 5;
       return clamp(Math.round(score), 0, 100);
     }
 
@@ -709,7 +709,26 @@
       if (!hasSummary) {
         return React.createElement("div", { className: "card" },
           React.createElement("h3", null, "Summary"),
-          React.createElement("div", { className: "muted" }, "No metrics available yet.")
+          React.createElement("div", { className: "muted" }, "No metrics available yet."),
+          React.createElement("button", { 
+            style: { marginTop: 10, padding: "6px 12px", cursor: "pointer", borderRadius: 4, border: "1px solid #ccc" },
+            onClick: () => {
+              let mockDot = "digraph G {\\n";
+              for(let i=0; i<50; i++) {
+                mockDot += `  node${i} [label="Rank ${i}"];\\n`;
+                if(i > 0) mockDot += `  node${Math.floor(Math.random()*i)} -> node${i} [label="send"];\\n`;
+                if(i % 3 === 0 && i > 0) mockDot += `  node${i} -> node${Math.floor(Math.random()*i)} [label="recv"];\\n`;
+              }
+              mockDot += "}";
+              setReport({
+                summary: { total_events: 100, sends: 50, recvs: 50, comm_graph: "example.dot" },
+                errors: [],
+                activity: [],
+                dotGraph: mockDot
+              });
+              setActiveTab(Tabs.TOPOLOGY);
+            }
+          }, "Load Example Graph (Many Nodes)")
         );
       }
 
@@ -720,7 +739,7 @@
         body = React.createElement(DiagnosticsView, { errors });
       } else if (activeTab === Tabs.TOPOLOGY) {
         body = React.createElement("div", { className: "topology-layout" },
-          React.createElement(NetworkView, { summary, activity }),
+          React.createElement(NetworkView, { report }),
           React.createElement(ActivityView, { activity })
         );
       } else {
@@ -803,7 +822,11 @@
       );
     }
 
-    function NetworkView({ summary, activity }) {
+    function NetworkView({ report }) {
+      const summary = report.summary || {};
+      const activity = report.activity || [];
+      const dotGraph = report.dotGraph;
+
       const containerRef = React.useRef(null);
       const networkRef = React.useRef(null);
       const seenRef = React.useRef(new Set());
@@ -815,6 +838,20 @@
         if (networkRef.current) {
           networkRef.current.destroy();
           networkRef.current = null;
+        }
+
+        if (dotGraph) {
+          try {
+            const parsedData = vis.network.convertDot(dotGraph);
+            const options = {
+              physics: { enabled: true, solver: 'forceAtlas2Based' },
+              interaction: { hover: true, zoomView: true }
+            };
+            networkRef.current = new vis.Network(container, parsedData, options);
+            return;
+          } catch (err) {
+            console.error("Failed to parse dot graph", err);
+          }
         }
 
         const ranks = uniqueRanks(activity);
@@ -845,8 +882,8 @@
         const data = { nodes, edges };
         const options = {
           edges: { smooth: { type: 'dynamic' }, arrows: { to: { enabled: true, scaleFactor: 0.6 } } },
-          physics: { enabled: false },
-          interaction: { hover: true, zoomView: false }
+          physics: { enabled: true, solver: 'forceAtlas2Based' },
+          interaction: { hover: true, zoomView: true }
         };
         networkRef.current = new vis.Network(container, data, options);
 
@@ -869,7 +906,6 @@
             color: { color },
             width: 3
           });
-          setTimeout(() => edges.remove(id), 900);
         }
 
         for (const item of activity || []) {
@@ -881,7 +917,7 @@
         }
 
         return () => {};
-      }, [activity]);
+      }, [report]);
 
       return React.createElement('div', { style: { display: 'grid', gap: 12 } },
         React.createElement('div', { className: 'card' },

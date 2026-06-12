@@ -84,7 +84,12 @@ async function readAndPublish(): Promise<void> {
     if (!e.file || !e.message || !e.line) {
       continue;
     }
-    const abs = path.isAbsolute(e.file) ? e.file : path.resolve(rootPath, e.file);
+    let file = e.file;
+    if (process.platform === "win32" && file.startsWith("/mnt/")) {
+      const drive = file.charAt(5);
+      file = drive + ":" + file.slice(6).replace(/\//g, "\\");
+    }
+    const abs = path.isAbsolute(file) ? file : path.resolve(rootPath, file);
     const uri = pathToFileURL(abs).toString();
 
     const startLine = Math.max(0, (e.line || 1) - 1);
@@ -92,7 +97,7 @@ async function readAndPublish(): Promise<void> {
     const diag: Diagnostic = {
       range: {
         start: { line: startLine, character: startCol },
-        end: { line: startLine, character: startCol + 20 },
+        end: { line: startLine, character: 1000 },
       },
       severity: mapSeverity(e.severity),
       message: `[rank ${e.rank ?? "?"}${e.peer !== undefined ? `\u2192${e.peer}` : ""}] ${e.message}`,

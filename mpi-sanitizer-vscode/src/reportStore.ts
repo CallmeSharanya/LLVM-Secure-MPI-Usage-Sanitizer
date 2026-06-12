@@ -36,6 +36,7 @@ export interface MpiReport {
   errors: MpiReportEntry[];
   summary?: MpiReportSummary;
   activity?: MpiActivityEvent[];
+  dotGraph?: string;
 }
 
 export interface MpiReportSummary {
@@ -136,8 +137,14 @@ export class ReportStore {
       .filter((e: unknown) => typeof e === "object" && e !== null)
       .map((entry) => {
         const e = entry as Record<string, unknown>;
+        let file = String(e.file || "");
+        let peerFile = e.peer_file !== undefined ? String(e.peer_file) : undefined;
+        if (process.platform === "win32") {
+          if (file.startsWith("/mnt/")) file = file.charAt(5) + ":" + file.slice(6).replace(/\//g, "\\");
+          if (peerFile?.startsWith("/mnt/")) peerFile = peerFile.charAt(5) + ":" + peerFile.slice(6).replace(/\//g, "\\");
+        }
         return {
-          file: String(e.file || ""),
+          file,
           line: Number(e.line || 0),
           col: e.col !== undefined ? Number(e.col) : 0,
           severity: (e.severity || "error") as MpiSeverity,
@@ -145,17 +152,30 @@ export class ReportStore {
           rank: e.rank !== undefined ? Number(e.rank) : undefined,
           peer: e.peer !== undefined ? Number(e.peer) : undefined,
           type: e.type !== undefined ? String(e.type) : undefined,
-          peer_file: e.peer_file !== undefined ? String(e.peer_file) : undefined,
+          peer_file: peerFile,
           peer_line: e.peer_line !== undefined ? Number(e.peer_line) : undefined,
         };
       })
       .filter((e) => e.file && e.line > 0 && e.message);
 
     const summary = sanitizeSummary(json.summary);
+    let dotGraph: string | undefined = undefined;
+    if (summary?.comm_graph) {
+      const dotPath = path.isAbsolute(summary.comm_graph)
+        ? summary.comm_graph
+        : path.resolve(path.dirname(this.reportPath), summary.comm_graph);
+      try {
+        dotGraph = await fs.promises.readFile(dotPath, "utf8");
+      } catch {
+        // ignore
+      }
+    }
+
     this.report = {
       errors: sanitized,
       summary,
       activity: deriveActivity(sanitized, summary),
+      dotGraph,
     };
     this.emitter.fire(this.report);
   }
