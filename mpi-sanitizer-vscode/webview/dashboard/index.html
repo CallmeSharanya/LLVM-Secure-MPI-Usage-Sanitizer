@@ -20,9 +20,12 @@
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: var(--bg);
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 28%),
+        radial-gradient(circle at top right, rgba(180, 35, 24, 0.08), transparent 22%),
+        linear-gradient(180deg, #fbfcfe 0%, #f3f7fb 100%);
       color: var(--ink);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     }
     header {
       padding: 14px 20px;
@@ -30,13 +33,154 @@
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid var(--border);
-      background: var(--panel);
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(14px);
+      position: sticky;
+      top: 0;
+      z-index: 3;
     }
     header h1 {
       margin: 0;
       font-size: 17px;
       font-weight: 650;
     }
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #0f766e 58%, #164e63 100%);
+      color: white;
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+      overflow: hidden;
+      position: relative;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: -40px auto auto -30px;
+      width: 170px;
+      height: 170px;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 72%);
+      pointer-events: none;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) auto;
+      gap: 18px;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+    }
+    .hero-kicker {
+      margin: 0 0 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+    .hero-title {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.1;
+      font-weight: 800;
+    }
+    .hero-copy {
+      margin: 8px 0 0;
+      color: rgba(255, 255, 255, 0.84);
+      font-size: 13px;
+      line-height: 1.6;
+      max-width: 70ch;
+    }
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .hero-stat {
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+    .hero-stat-label {
+      display: block;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.72);
+    }
+    .hero-stat-value {
+      font-size: 18px;
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+    }
+    .hero-side {
+      display: grid;
+      place-items: center;
+      min-width: 132px;
+    }
+    .score-ring {
+      width: 132px;
+      height: 132px;
+      border-radius: 50%;
+      padding: 12px;
+      background: conic-gradient(var(--accent) 0deg, var(--accent) 0deg, rgba(255, 255, 255, 0.12) 0deg);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
+    }
+    .score-ring-inner {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: rgba(11, 18, 32, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: center;
+      padding: 10px;
+    }
+    .score-number {
+      font-size: 32px;
+      line-height: 1;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+    }
+    .score-label {
+      margin-top: 4px;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.66);
+    }
+    .score-note {
+      margin-top: 7px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.4;
+    }
+    .pill-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: white;
+    }
+    .pill.ok { background: rgba(18, 114, 93, 0.2); }
+    .pill.warn { background: rgba(183, 121, 31, 0.18); }
+    .pill.bad { background: rgba(180, 35, 24, 0.18); }
     #root { padding: 16px 20px 24px; }
     .tabs {
       display: flex;
@@ -146,6 +290,34 @@
       font-variant-numeric: tabular-nums;
       font-weight: 650;
     }
+    .mini-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-top: 12px;
+    }
+    .matrix {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    }
+    .matrix-item {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%);
+    }
+    .matrix-item strong {
+      display: block;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+    .matrix-item span {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
     .badge {
       display: inline-flex;
       align-items: center;
@@ -165,6 +337,33 @@
       gap: 12px;
       grid-template-columns: minmax(320px, 1.3fr) minmax(260px, 0.8fr);
       align-items: start;
+    }
+    .topology-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .topology-header strong {
+      font-size: 13px;
+    }
+    .node-list {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .node-chip {
+      border-radius: 999px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      background: #f7fafc;
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
     }
     .activity-list {
       display: grid;
@@ -205,10 +404,13 @@
       line-height: 1.5;
     }
     @media (max-width: 760px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-side { justify-items: start; }
       .wide-grid { grid-template-columns: 1fr; }
       .topology-layout { grid-template-columns: 1fr; }
       header { align-items: flex-start; gap: 6px; flex-direction: column; }
       .row { grid-template-columns: 1fr; gap: 5px; }
+      .hero-stats { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -256,6 +458,138 @@
       return value === null || value === undefined ? "N/A" : `${Number(value).toFixed(6)}s`;
     }
 
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function postureScore(summary) {
+      let score = 100;
+      score -= n(summary.errors_detected) * 12;
+      score -= (n(summary.type_mismatch) + n(summary.size_mismatch) + n(summary.integrity_violation)) * 30;
+      score -= n(summary.collective_mismatch) * 15;
+      score -= n(summary.deadlock_detected) * 100;
+      score -= n(summary.replay_detected) * 100;
+      score -= n(summary.timeout_warning) * 20;
+      score -= n(summary.overlap_warning) * 7;
+      score -= n(summary.anomaly_warning) * 5;
+      score -= (n(summary.unmatched_sends) + n(summary.unmatched_recvs)) * 10;
+      return clamp(Math.round(score), 0, 100);
+    }
+
+    function postureLabel(score, summary) {
+      if (n(summary.errors_detected) === 0 && n(summary.unmatched_sends) + n(summary.unmatched_recvs) === 0) {
+        return "Clean run";
+      }
+      if (score >= 80) return "Healthy";
+      if (score >= 60) return "Degraded";
+      return "Critical";
+    }
+
+    function postureNote(score, summary) {
+      if (n(summary.errors_detected) === 0 && n(summary.unmatched_sends) + n(summary.unmatched_recvs) === 0) {
+        return "No protocol violations were counted in the latest run.";
+      }
+      if (score >= 80) {
+        return "Mostly aligned traffic with minor warnings to inspect.";
+      }
+      if (score >= 60) {
+        return "The run contains mismatch signals that deserve a closer look.";
+      }
+      return "Multiple violations suggest a broken protocol or suspicious traffic pattern.";
+    }
+
+    function observedRanks(activity) {
+      const ranks = new Set();
+      for (const item of activity || []) {
+        if (Number.isFinite(Number(item.rank))) {
+          ranks.add(Number(item.rank));
+        }
+        if (Number.isFinite(Number(item.peer))) {
+          ranks.add(Number(item.peer));
+        }
+      }
+      return Array.from(ranks).sort((a, b) => a - b);
+    }
+
+    function uniqueRanks(activity) {
+      const ranks = observedRanks(activity);
+      return ranks.length > 0 ? ranks : [0, 1];
+    }
+
+    function MissionControl({ summary, activity }) {
+      const score = postureScore(summary);
+      const ranks = observedRanks(activity);
+      const scoreTone = score >= 80 ? "ok" : score >= 60 ? "warn" : "bad";
+      const ringColor = scoreTone === "ok" ? "#0f766e" : scoreTone === "warn" ? "#b7791f" : "#b42318";
+      const ringStyle = {
+        background: `conic-gradient(${ringColor} ${score * 3.6}deg, rgba(255, 255, 255, 0.12) 0deg)`,
+      };
+
+      return React.createElement("div", { className: "hero" },
+        React.createElement("div", { className: "hero-grid" },
+          React.createElement("div", null,
+            React.createElement("p", { className: "hero-kicker" }, "MPI usage sanitizer"),
+            React.createElement("h2", { className: "hero-title" }, "Mission Control for message correctness"),
+            React.createElement("p", { className: "hero-copy" },
+              "This dashboard fuses runtime communication evidence, protocol mismatch signals, and trust-oriented analytics into a single view you can walk through live during a demo."
+            ),
+            React.createElement("div", { className: "hero-stats" },
+              React.createElement("div", { className: "hero-stat" },
+                React.createElement("span", { className: "hero-stat-label" }, "Total events"),
+                React.createElement("div", { className: "hero-stat-value" }, fmt(summary.total_events))
+              ),
+              React.createElement("div", { className: "hero-stat" },
+                React.createElement("span", { className: "hero-stat-label" }, "Observed ranks"),
+                React.createElement("div", { className: "hero-stat-value" }, fmt(ranks.length))
+              ),
+              React.createElement("div", { className: "hero-stat" },
+                React.createElement("span", { className: "hero-stat-label" }, "Matched pairs"),
+                React.createElement("div", { className: "hero-stat-value" }, fmt(summary.matched_pairs))
+              )
+            ),
+            React.createElement("div", { className: "pill-row" },
+              React.createElement("span", { className: `pill ${scoreTone}` }, `posture ${postureLabel(score, summary)}`),
+              React.createElement("span", { className: "pill" }, `${fmt(summary.sends)} sends`),
+              React.createElement("span", { className: "pill" }, `${fmt(summary.recvs)} recvs`)
+            )
+          ),
+          React.createElement("div", { className: "hero-side" },
+            React.createElement("div", { className: "score-ring", style: ringStyle },
+              React.createElement("div", { className: "score-ring-inner" },
+                React.createElement("div", null,
+                  React.createElement("div", { className: "score-number" }, score),
+                  React.createElement("div", { className: "score-label" }, "security score"),
+                  React.createElement("div", { className: "score-note" }, postureNote(score, summary))
+                )
+              )
+            )
+          )
+        )
+      );
+    }
+
+    function OverviewTiles({ summary, activity }) {
+      const ranks = observedRanks(activity);
+      return React.createElement("div", { className: "mini-grid" },
+        React.createElement("div", { className: "card" },
+          React.createElement("h3", null, "Trust Snapshot"),
+          React.createElement("div", { className: "matrix" },
+            React.createElement("div", { className: "matrix-item" }, React.createElement("span", null, "Integrity"), React.createElement("strong", null, fmt(summary.integrity_violation))),
+            React.createElement("div", { className: "matrix-item" }, React.createElement("span", null, "Replay"), React.createElement("strong", null, fmt(summary.replay_detected))),
+            React.createElement("div", { className: "matrix-item" }, React.createElement("span", null, "Timeout"), React.createElement("strong", null, fmt(summary.timeout_warning))),
+            React.createElement("div", { className: "matrix-item" }, React.createElement("span", null, "Deadlock"), React.createElement("strong", null, fmt(summary.deadlock_detected)))
+          )
+        ),
+        React.createElement("div", { className: "card" },
+          React.createElement("h3", null, "Observed Ranks"),
+          React.createElement("div", { className: "muted" }, ranks.length ? "Endpoints inferred from the latest run" : "No explicit rank data recorded yet."),
+          React.createElement("div", { className: "node-list" },
+            (ranks.length ? ranks : [0, 1]).map((rank) => React.createElement("span", { className: "node-chip", key: rank }, `rank ${rank}`))
+          )
+        )
+      );
+    }
+
     function MetricCard({ title, value, sub, tone }) {
       return React.createElement("div", { className: "card" },
         React.createElement("h3", null, title),
@@ -282,7 +616,7 @@
       );
     }
 
-    function SummaryView({ summary }) {
+    function SummaryView({ summary, activity }) {
       const errors = n(summary.errors_detected);
       return React.createElement("div", null,
         React.createElement("div", { className: "grid" },
@@ -313,7 +647,8 @@
         React.createElement("div", { className: "wide-grid" },
           React.createElement(Breakdown, { summary }),
           React.createElement(CommunicationCard, { summary })
-        )
+        ),
+        React.createElement(OverviewTiles, { summary, activity })
       );
     }
 
@@ -357,7 +692,8 @@
             const status = document.getElementById("status");
             if (status) {
               const total = n(nextReport.summary?.total_events);
-              status.textContent = total > 0 ? `${fmt(total)} events analyzed` : "Report loaded";
+              const score = postureScore(nextReport.summary || {});
+              status.textContent = total > 0 ? `${fmt(total)} events analyzed · posture ${score}/100` : "Report loaded";
             }
           }
         };
@@ -379,7 +715,7 @@
 
       let body;
       if (activeTab === Tabs.SUMMARY) {
-        body = React.createElement(SummaryView, { summary });
+        body = React.createElement(SummaryView, { summary, activity });
       } else if (activeTab === Tabs.DIAGNOSTICS) {
         body = React.createElement(DiagnosticsView, { errors });
       } else if (activeTab === Tabs.TOPOLOGY) {
@@ -404,6 +740,7 @@
       }
 
       return React.createElement("div", null,
+        React.createElement(MissionControl, { summary, activity }),
         React.createElement("div", { className: "tabs" },
           Object.values(Tabs).map((tab) =>
             React.createElement("button", {
@@ -475,16 +812,41 @@
         const container = containerRef.current;
         if (!container) return;
 
-        const nodes = new vis.DataSet([
-          { id: 0, label: 'Rank 0', color: { background: '#e6fffb' } },
-          { id: 1, label: 'Rank 1', color: { background: '#e6fffb' } }
-        ]);
+        if (networkRef.current) {
+          networkRef.current.destroy();
+          networkRef.current = null;
+        }
+
+        const ranks = uniqueRanks(activity);
+        const degree = new Map();
+        for (const item of activity || []) {
+          const src = Number.isFinite(Number(item.rank)) ? Number(item.rank) : null;
+          const dst = Number.isFinite(Number(item.peer)) ? Number(item.peer) : null;
+          if (src !== null) {
+            degree.set(src, (degree.get(src) || 0) + 1);
+          }
+          if (dst !== null) {
+            degree.set(dst, (degree.get(dst) || 0) + 1);
+          }
+        }
+
+        const nodes = new vis.DataSet(ranks.map((rank, index) => ({
+          id: rank,
+          label: `Rank ${rank}`,
+          title: `Observed endpoint ${rank}`,
+          shape: 'dot',
+          size: 18 + Math.min(10, (degree.get(rank) || 0) * 2),
+          color: {
+            background: index % 2 === 0 ? '#e6fffb' : '#eef6ff',
+            border: index % 2 === 0 ? '#0f766e' : '#1d4ed8',
+          }
+        })));
         const edges = new vis.DataSet([]);
         const data = { nodes, edges };
         const options = {
           edges: { smooth: { type: 'dynamic' }, arrows: { to: { enabled: true, scaleFactor: 0.6 } } },
           physics: { enabled: false },
-          interaction: { hover: true }
+          interaction: { hover: true, zoomView: false }
         };
         networkRef.current = new vis.Network(container, data, options);
 
@@ -493,6 +855,12 @@
           const src = Number.isFinite(Number(eventItem.rank)) ? Number(eventItem.rank) : 0;
           const dst = Number.isFinite(Number(eventItem.peer)) ? Number(eventItem.peer) : (src === 0 ? 1 : 0);
           const color = eventItem.integrity === 'flagged' || eventItem.auth === 'unverified' ? '#b42318' : '#0f766e';
+          if (!nodes.get(src)) {
+            nodes.add({ id: src, label: `Rank ${src}`, shape: 'dot', size: 18, color: { background: '#eef6ff', border: '#1d4ed8' } });
+          }
+          if (!nodes.get(dst)) {
+            nodes.add({ id: dst, label: `Rank ${dst}`, shape: 'dot', size: 18, color: { background: '#eef6ff', border: '#1d4ed8' } });
+          }
           edges.add({
             id,
             from: eventItem.direction === 'recv' ? dst : src,
@@ -517,7 +885,10 @@
 
       return React.createElement('div', { style: { display: 'grid', gap: 12 } },
         React.createElement('div', { className: 'card' },
-          React.createElement('h3', null, 'Topology Visualizer'),
+          React.createElement('div', { className: 'topology-header' },
+            React.createElement('strong', null, 'Topology Visualizer'),
+            React.createElement('div', { className: 'muted' }, `${uniqueRanks(activity).length} observed ranks · ${fmt(summary.sends)} sends · ${fmt(summary.recvs)} recvs`)
+          ),
           React.createElement('div', { ref: containerRef, style: { height: 280 } })
         ),
         React.createElement('div', { className: 'card' },
@@ -528,6 +899,9 @@
             React.createElement('div', null, 'Integrity'), React.createElement('div', null, fmt(summary.integrity_violation)),
             React.createElement('div', null, 'Replay'), React.createElement('div', null, fmt(summary.replay_detected)),
             React.createElement('div', null, 'Warnings'), React.createElement('div', null, fmt(n(summary.timeout_warning) + n(summary.anomaly_warning) + n(summary.overlap_warning)))
+          ),
+          React.createElement('div', { className: 'node-list' },
+            uniqueRanks(activity).map((rank) => React.createElement('span', { className: 'node-chip', key: rank }, `rank ${rank}`))
           )
         )
       );

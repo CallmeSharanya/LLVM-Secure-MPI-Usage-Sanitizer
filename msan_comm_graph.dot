@@ -1,5 +1,5 @@
 digraph MPIComm {
   rankdir=LR;
   node [shape=circle];
-  0 -> 1 [label="tag=13"];
+  0 -> 1 [label="tag=1"];
 }

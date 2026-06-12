@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-find_package(LLVM 14 REQUIRED CONFIG)
+find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
@@ -61,6 +61,9 @@ target_include_directories(msan_runtime PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/runtime
 )
 
+find_package(OpenSSL REQUIRED)
+
 target_link_libraries(msan_runtime PRIVATE
   MPI::MPI_C
+  OpenSSL::Crypto
 )

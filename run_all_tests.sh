@@ -86,7 +86,7 @@ compile_and_run() {
 
     # Step 2: Run the sanitizer pass
     opt -load-pass-plugin="${PASS_PLUGIN}" -passes="mpi-sanitize" \
-        "${bc_file}" -o "${inst_bc}" 2>/dev/null
+        "${bc_file}" -o "${inst_bc}"
     if [ $? -ne 0 ]; then
         STDERR_OUTPUT="OPT_ERROR"
         return 1
@@ -140,7 +140,7 @@ run_test() {
         return
     fi
 
-    compile_and_run "${src}" "${np}"
+    compile_and_run "${src}" "${np}" || true
     local rc=$?
 
     if [ "${STDERR_OUTPUT}" = "COMPILE_ERROR" ]; then

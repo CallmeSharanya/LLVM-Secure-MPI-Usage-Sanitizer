@@ -6,6 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+
+#define SECURE_OVERHEAD 36
+static const unsigned char psk[32] = "01234567890123456789012345678901"; // 32-byte key
+static uint64_t seq_counters[1024][1024] = {0}; // simple 2D array for sequence numbers
 
 typedef struct {
   MsanEvent *data;
@@ -128,23 +134,93 @@ static void log_event(MsanEventKind kind, void *buf, int count, uint64_t datatyp
   msan_vec_push(ev);
 }
 
-void __msan_before_send(void *buf, int count, uint64_t datatype_handle, int dest,
+void __msan_secure_send(void *buf, int count, uint64_t datatype_handle, int dest,
                         int tag, uint64_t comm_handle, const char *file,
                         int line) {
+  msan_init_if_needed();
+  MPI_Datatype datatype = msan_dt_from_handle(datatype_handle);
+  MPI_Comm comm = msan_comm_from_handle(comm_handle);
+
   log_event(MSAN_EV_SEND, buf, count, datatype_handle, dest, tag, comm_handle, file, line);
+
+  int type_size;
+  PMPI_Type_size(datatype, &type_size);
+  int payload_len = count * type_size;
+
+  unsigned char *wire_buf = (unsigned char *)malloc(payload_len + SECURE_OVERHEAD);
+  if (!wire_buf) PMPI_Abort(comm, 1);
+
+  uint64_t seq = ++seq_counters[g_rank][dest];
+  memcpy(wire_buf, &seq, 8);
+  unsigned char iv[12];
+  RAND_bytes(iv, 12);
+  memcpy(wire_buf + 8, iv, 12);
+
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  int outlen;
+  EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, psk, iv);
+  EVP_EncryptUpdate(ctx, wire_buf + 20, &outlen, (const unsigned char *)buf, payload_len);
+  int ciphertext_len = outlen;
+  EVP_EncryptFinal_ex(ctx, wire_buf + 20 + outlen, &outlen);
+  ciphertext_len += outlen;
+  EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, wire_buf + 20 + ciphertext_len);
+  EVP_CIPHER_CTX_free(ctx);
+
+  PMPI_Send(wire_buf, ciphertext_len + 36, MPI_BYTE, dest, tag, comm);
+  free(wire_buf);
 }
 
-void __msan_after_recv(void *buf, int count, uint64_t datatype_handle,
-                       int source, int tag, uint64_t comm_handle, void *status,
-                       const char *file, int line) {
+void __msan_secure_recv(void *buf, int count, uint64_t datatype_handle,
+                        int source, int tag, uint64_t comm_handle, void *status,
+                        const char *file, int line) {
   msan_init_if_needed();
-  MPI_Status *st = (MPI_Status *)status;
-  int actual_src = source;
-  int actual_tag = tag;
+  MPI_Datatype datatype = msan_dt_from_handle(datatype_handle);
+  MPI_Comm comm = msan_comm_from_handle(comm_handle);
 
-  if (st && st != MPI_STATUS_IGNORE) {
-    actual_src = st->MPI_SOURCE;
-    actual_tag = st->MPI_TAG;
+  MPI_Status probe_st;
+  PMPI_Probe(source, tag, comm, &probe_st);
+  int wire_len;
+  PMPI_Get_count(&probe_st, MPI_BYTE, &wire_len);
+
+  unsigned char *wire_buf = (unsigned char *)malloc(wire_len);
+  if (!wire_buf) PMPI_Abort(comm, 1);
+
+  MPI_Status recv_st;
+  PMPI_Recv(wire_buf, wire_len, MPI_BYTE, probe_st.MPI_SOURCE, probe_st.MPI_TAG, comm, &recv_st);
+
+  int actual_src = recv_st.MPI_SOURCE;
+  int actual_tag = recv_st.MPI_TAG;
+
+  uint64_t seq;
+  memcpy(&seq, wire_buf, 8);
+  unsigned char iv[12];
+  memcpy(iv, wire_buf + 8, 12);
+  unsigned char recv_tag[16];
+  memcpy(recv_tag, wire_buf + wire_len - 16, 16);
+
+  if (seq <= seq_counters[actual_src][g_rank]) {
+      fprintf(stderr, "[msan][SECURITY-ERROR] Replay attack detected from rank %d (seq %" PRIu64 " <= expected %" PRIu64 ")!\n", actual_src, seq, seq_counters[actual_src][g_rank]);
+      PMPI_Abort(comm, 1);
+  }
+  seq_counters[actual_src][g_rank] = seq;
+
+  int payload_len = wire_len - 36;
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  int outlen;
+  EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, psk, iv);
+  EVP_DecryptUpdate(ctx, (unsigned char *)buf, &outlen, wire_buf + 20, payload_len);
+  EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, recv_tag);
+  int ret = EVP_DecryptFinal_ex(ctx, ((unsigned char *)buf) + outlen, &outlen);
+  EVP_CIPHER_CTX_free(ctx);
+
+  if (ret <= 0) {
+      fprintf(stderr, "[msan][SECURITY-ERROR] Cryptographic authentication failed for message from rank %d!\n", actual_src);
+      PMPI_Abort(comm, 1);
+  }
+
+  free(wire_buf);
+  if (status && status != MPI_STATUS_IGNORE) {
+      memcpy(status, &recv_st, sizeof(MPI_Status));
   }
 
   log_event(MSAN_EV_RECV, buf, count, datatype_handle, actual_src, actual_tag, comm_handle, file, line);

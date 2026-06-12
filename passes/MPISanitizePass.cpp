@@ -43,18 +43,18 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
     LLVMContext &Ctx = M.getContext();
 
     Type *VoidTy = Type::getVoidTy(Ctx);
-    PointerType *I8PtrTy = Type::getInt8PtrTy(Ctx);
+    PointerType *I8PtrTy = PointerType::getUnqual(Ctx);
     Type *I32Ty = Type::getInt32Ty(Ctx);
     Type *I64Ty = Type::getInt64Ty(Ctx);
 
-    // void __msan_before_send(void *buf, int count, uint64_t dt_handle, int dest, int tag, uint64_t comm_handle, const char *file, int line);
-    FunctionCallee BeforeSend =
-      M.getOrInsertFunction("__msan_before_send", VoidTy, I8PtrTy, I32Ty,
+    // void __msan_secure_send(void *buf, int count, uint64_t dt_handle, int dest, int tag, uint64_t comm_handle, const char *file, int line);
+    FunctionCallee SecureSend =
+      M.getOrInsertFunction("__msan_secure_send", VoidTy, I8PtrTy, I32Ty,
                   I64Ty, I32Ty, I32Ty, I64Ty, I8PtrTy, I32Ty);
 
-    // void __msan_after_recv(void *buf, int count, uint64_t dt_handle, int source, int tag, uint64_t comm_handle, void *status, const char *file, int line);
-    FunctionCallee AfterRecv =
-      M.getOrInsertFunction("__msan_after_recv", VoidTy, I8PtrTy, I32Ty,
+    // void __msan_secure_recv(void *buf, int count, uint64_t dt_handle, int source, int tag, uint64_t comm_handle, void *status, const char *file, int line);
+    FunctionCallee SecureRecv =
+      M.getOrInsertFunction("__msan_secure_recv", VoidTy, I8PtrTy, I32Ty,
                   I64Ty, I32Ty, I32Ty, I64Ty, I8PtrTy, I8PtrTy,
                   I32Ty);
 
@@ -84,7 +84,7 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
     auto toI8Ptr = [&](IRBuilder<> &B, Value *V) -> Value * {
       Type *Ty = V->getType();
       if (Ty->isPointerTy())
-        return B.CreateBitCast(V, I8PtrTy);
+        return V;
       if (Ty->isIntegerTy()) {
         Value *AsI64 = B.CreateZExtOrTrunc(V, I64Ty);
         return B.CreateIntToPtr(AsI64, I8PtrTy);
@@ -95,6 +95,8 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
     for (Function &F : M) {
       if (F.isDeclaration())
         continue;
+
+      SmallVector<Instruction*, 16> ToErase;
 
       for (Instruction &I : instructions(F)) {
         auto *CB = dyn_cast<CallBase>(&I);
@@ -140,8 +142,9 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
           if (!Buf || !Datatype || !Comm)
             continue;
 
-          B.CreateCall(BeforeSend,
+          B.CreateCall(SecureSend,
                        {Buf, Count, Datatype, Dest, Tag, Comm, FilePtr, LineVal});
+          ToErase.push_back(&I);
           Changed = true;
           continue;
         }
@@ -151,17 +154,7 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
           if (CB->arg_size() < 7)
             continue;
 
-          Instruction *InsertPt = nullptr;
-          if (auto *CallI = dyn_cast<CallInst>(CB)) {
-            InsertPt = CallI->getNextNode();
-          }
-
-          if (!InsertPt) {
-            // Fallback: insert right after the call.
-            InsertPt = CB->getParent()->getTerminator();
-          }
-
-          IRBuilder<> B(InsertPt);
+          IRBuilder<> B(CB);
           auto [FilePtr, LineVal] = getFileLine(B, I);
 
           Value *Buf = toI8Ptr(B, CB->getArgOperand(0));
@@ -175,8 +168,9 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
           if (!Buf || !Datatype || !Comm || !Status)
             continue;
 
-          B.CreateCall(AfterRecv, {Buf, Count, Datatype, Source, Tag, Comm, Status,
+          B.CreateCall(SecureRecv, {Buf, Count, Datatype, Source, Tag, Comm, Status,
                                    FilePtr, LineVal});
+          ToErase.push_back(&I);
           Changed = true;
           continue;
         }
@@ -248,6 +242,9 @@ struct MPISanitizePass : public PassInfoMixin<MPISanitizePass> {
           Changed = true;
           continue;
         }
+      }
+      for (Instruction *I : ToErase) {
+        I->eraseFromParent();
       }
     }
 

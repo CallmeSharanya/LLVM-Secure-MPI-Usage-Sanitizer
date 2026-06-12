@@ -84,7 +84,7 @@
         "mpiSanitize.mpiArgs": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["-n", "4"],
+          "default": ["-n", "2"],
           "description": "Arguments passed to mpirun before the program."
         },
         "mpiSanitize.reportPath": {

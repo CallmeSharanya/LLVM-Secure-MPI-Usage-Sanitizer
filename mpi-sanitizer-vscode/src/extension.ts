@@ -101,7 +101,7 @@ function createTaskForFile(inputFile: string, root: string): vscode.Task {
   const plugin = resolveBuildArtifact(config.get<string>("passPluginPath") || "", root, "libMPISanitizePass.so");
   const runtimeLib = resolveBuildArtifact(config.get<string>("runtimeLibPath") || "", root, "libmsan_runtime.so");
   const mpirun = config.get<string>("mpiRun") || "mpirun";
-  const mpiArgs = config.get<string[]>("mpiArgs") || ["-n", "4"];
+  const mpiArgs = config.get<string[]>("mpiArgs") || ["-n", "2"];
 
   const base = path.basename(inputFile, path.extname(inputFile));
   const outDir = path.join(root, ".mpi-sanitize", base);
@@ -351,18 +351,26 @@ const fs = require("fs");
 const cp = require("child_process");
 
 const options = ${JSON.stringify(params)};
+const isWin = process.platform === "win32";
+
+function toWslPath(p) {
+  if (!isWin || typeof p !== "string" || (!p.includes(":\\\\") && !p.includes(":/"))) return p;
+  return p.replace(/^([A-Za-z]):[\\\\\\/]/, (m, drive) => \`/mnt/\${drive.toLowerCase()}/\`).replace(/\\\\/g, "/");
+}
 
 function run(command, args) {
-  cp.execFileSync(command, args, { stdio: "inherit", cwd: options.root });
+  const mappedArgs = args.map(toWslPath);
+  if (isWin && !command.startsWith("wsl")) {
+    mappedArgs.unshift(command);
+    command = "wsl";
+  }
+  cp.execFileSync(command, mappedArgs, { stdio: "inherit", cwd: options.root });
 }
 
 function splitArgs(text) {
-  if (!text) {
-    return [];
-  }
-
+  if (!text) return [];
   const args = [];
-  const re = /(?:[^\s"']+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')+/g;
+  const re = /(?:[^\\s"']+|"(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*')+/g;
   for (const match of text.match(re) || []) {
     if ((match.startsWith('"') && match.endsWith('"')) || (match.startsWith("'") && match.endsWith("'"))) {
       args.push(match.slice(1, -1));
@@ -374,15 +382,23 @@ function splitArgs(text) {
 }
 
 fs.mkdirSync(options.outDir, { recursive: true });
-const compileFlags = cp.execFileSync(options.mpiCompiler, ["--showme:compile"], {
+
+let mpiCmd = options.mpiCompiler;
+let mpiShowmeArgs = ["--showme:compile"];
+if (isWin && !mpiCmd.startsWith("wsl")) {
+  mpiShowmeArgs.unshift(mpiCmd);
+  mpiCmd = "wsl";
+}
+
+const compileFlags = cp.execFileSync(mpiCmd, mpiShowmeArgs, {
   encoding: "utf8",
   cwd: options.root,
 }).trim();
 
 run(options.compiler, ["-g", "-O0", "-emit-llvm", "-c", ...splitArgs(compileFlags), options.inputFile, "-o", options.bcFile]);
-run(options.opt, ["-load-pass-plugin=" + options.plugin, "-passes=mpi-sanitize", options.bcFile, "-o", options.instBcFile]);
+run(options.opt, ["-load-pass-plugin=" + toWslPath(options.plugin), "-passes=mpi-sanitize", options.bcFile, "-o", options.instBcFile]);
 run(options.compiler, ["-g", "-O0", "-c", options.instBcFile, "-o", options.objFile]);
-run(options.mpiCompiler, ["-g", "-O0", options.objFile, options.runtimeLib, "-lm", "-Wl,-rpath," + options.runtimeDir, "-o", options.output]);
+run(options.mpiCompiler, ["-g", "-O0", options.objFile, toWslPath(options.runtimeLib), "-lm", "-Wl,-rpath," + toWslPath(options.runtimeDir), "-o", options.output]);
 run(options.mpirun, [...options.mpiArgs, options.output]);
 `;
 
